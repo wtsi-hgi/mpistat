@@ -98,22 +98,28 @@ class pstat(ParallelWalk):
         self.stat_line(path)
 
 # need to add the 'main' idiom here
-if len(sys.argv) != 3 :
-    print "usage : printfile <start dir> <output dir>"
-    sys.exit(1)
 
-start_dir=sys.argv[1]
-comm = MPI.COMM_WORLD
-rank = comm.Get_rank()
-workers = comm.size
+if __name__ == "__main__":
+    if len(sys.argv) != 3 :
+        print "usage : printfile <start dir> <output dir>"
+        sys.exit(1)
 
-# create the output file for this rank
-# and set the cost per terabyte per year
-num='%02d' % (rank)
-output_file=open(sys.argv[2]+'/'+num+'.out','w')
-crawler = pstat(comm, results=0)
-crawler.output_file=output_file
-crawler.cost_tb_year=150.00
-r=crawler.Execute(start_dir)
-if rank == 0 :
-    print "Total size was %.2f TiB" % ( sum(r) / (1024.0*1024.0*1024.0*1024.0) )
+    start_dir=sys.argv[1]
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+    workers = comm.size
+
+    # create the output file for this rank
+    # and set the cost per terabyte per year
+    num='%02d' % (rank)
+    output_file=open(sys.argv[2]+'/'+num+'.out','w')
+
+    # start the crawler
+    crawler = pstat(comm, results=0)
+    crawler.output_file=output_file
+    crawler.cost_tb_year=150.00
+    r=crawler.Execute(start_dir)
+
+    # report results if this is the rank 0 worker
+    if rank == 0 :
+        print "Total size was %.2f TiB" % ( sum(r) / (1024.0*1024.0*1024.0*1024.0) )
