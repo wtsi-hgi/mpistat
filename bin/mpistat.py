@@ -5,79 +5,43 @@
 # cost is dependent on the amount of time a file has not been accessed for and it's size
 # ordering by cost suggests files we should try to clean up
 from mpi4py import MPI
-from lib.parallelwalk  import ParallelWalk
-
+from ParallelWalk import ParallelWalk
 import os
 import pwd
-import grp
 import sys
 import stat
 import time
 import base64
-cost_tb_year=150.00
 now=int(time.time())
-
-def cost(sz,now,camtime) :
-    """
-        Calculate a cost for a file based on the passed in time on the inode [cam]time value and the size
-    """
-    # size in TiB	(magic numner is bytes in a TiB)
-    tib=1.0*sz/107374182
-    # years since the last [cam]time (magic number is seconds in a (non-leap) year )
-    yrs=1.0*(now-camtime)/31536000
-    return tb*yrs*cost_tb_year
-
-def safelstat(path):
-    """
-        lstat can sometimes by interrupted and return EINTR so wrap the call in a try block
-    """
-    while True:
-        try:
-            return os.lstat(path)
-        except IOError, error:
-            if error.errno != 4:
-                raise
-
-def file_type(mode) :
-    """
-        Turn the stat mode into it's standard representational character
-        need to replace this with a constant dictionary within the class once
-        we have things fully set up in github
-    """
-    if stat.S_ISREG(mode) :
-        return 'f'
-    elif stat.S_ISDIR(mode) :
-        return 'd'
-    elif stat.S_ISLNK(mode) :
-        return 'l'
-    elif stat.S_ISSOCK(mode) :
-        return 's'
-    elif stat.S_ISBLK(mode) :
-        return 'b'
-    elif stat.S_ISCHR(mode) :
-        return 'c'
-    elif stat.S_ISFIFO(mode) :
-        return 'F'
-    else :
-        return 'X'
 
 class pstat(ParallelWalk):
     """
-        Subclassing the ParallelWalk class to override the ProcessFile and ProcessDir methods.
-        Need to modify this once we have the function signatures updated to pass in the lstat info
-        if it has it.
-        It uses the results mechanism to return the total size in the results. Need to make results a
-        tuple and return the total cost (based on ctime) and the total waste (based on atime) as well
+    Subclassing the ParallelWalk class to override the ProcessFile
+    and ProcessDir methods. Need to modify this once we have the
+    function signatures updated to pass in the lstat info if it has it.
+    It uses the results mechanism to return the total size in the
+    results. Need to make results a tuple and return the total cost
+    (based on ctime) and the total waste (based on atime) as well.
     """
+    _file_type_dict={
+        stat.S_IFSOCK : 's',
+        stat.S_IFLNK : 'l',
+        stat.S_IFREG : 'f',
+        stat.S_IFBLK : 'b',
+        stat.S_IFDIR : 'd',
+        stat.S_IFCHR : 'c'
+        stat.S_IFIFO : 'F'
+    }
 
     def stat_line(self, path) :
         """
-            print out the stat information into a tab seperated file. one file produced for each mpi rank.
-            they all need to be catted together once the job is done. For speed, we don't try to resolve the
-            uid and gid here, that can be done at the parse stage.
+        print out the stat information into a tab seperated file.
+        One file produced for each mpi rank. They all need to be
+        catted together once the job is done. For speed, we don't
+        try to resolve the uid and gid here, that can be done at
+        the parse stage.
         """
         try :
-            s=safestat(path)
             sz=s.st_size
             self.results += sz
             u=s.st_uid
@@ -85,19 +49,34 @@ class pstat(ParallelWalk):
             a=s.st_atime
             m=s.st_mtime
             c=s.st_ctime
-            t=file_type(s.st_mode)
-            out='%s\t%d\t%d\t%d\t%d\t%d\t%d\t%s\t%.9f\n' % (base64.b64encode(path),sz,u,g,a,m,c,t,cost(sz,a))
-            output_file.write(out)
+            t='X' # default t to 'X', override in next section if needed
+            if s.st_mode in pstat._file_type_dict :
+                t=pstat._file_type_dict[s.st_mode]
+            out='%s\t%d\t%d\t%d\t%d\t%d\t%d\t%s\t%.9f\n' % \
+                (base64.b64encode(path),sz,u,g,a,m,c,t,cost(sz,a))
+            self.output_file.write(out)
         except :
             pass
 
-    def ProcessFile(self, path):
-        self.stat_line(path)
+    def ProcessFile(self, path, s):
+        if s is None :
+            s=self._lstat(path)
+        self.stat_line(path, s)
 
-    def ProcessDir(self, path) :
-        self.stat_line(path)
+    def ProcessDir(self, path, s) :
+        self.ProcessFile(path, s)
 
-# need to add the 'main' idiom here
+    def cost(self,sz,camtime) :
+        """
+        Calculate a cost for a file based on the passed in time on the
+        inode [cam]time value and the size.
+        """
+        # size in TiB (magic numner is bytes in a TiB)
+        tib=1.0*sz/107374182
+        # years since the last [cam]time (magic number is
+        # seconds in a (non-leap) year )
+        yrs=1.0*(self.now-camtime)/31536000
+        return tb*yrs*self.cost_tb_year
 
 if __name__ == "__main__":
     if len(sys.argv) != 3 :
@@ -116,8 +95,13 @@ if __name__ == "__main__":
 
     # start the crawler
     crawler = pstat(comm, results=0)
+
+    # assign some instance variables that are used
+    # would be better to somehow specify these in a subclassed
+    # constructor
     crawler.output_file=output_file
     crawler.cost_tb_year=150.00
+    crawler.now=int(time.time())
     r=crawler.Execute(start_dir)
 
     # report results if this is the rank 0 worker
