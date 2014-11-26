@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 # Example program to crawl filesystem in parallel and print filenames.
-# prints the base64 of the path in case the filename contains non-printable characters
-# also prints info from the lstat call : path, size, uid, gid, atime, mtime, ctime, type (f,d etc.) and a cost
-# cost is dependent on the amount of time a file has not been accessed for and it's size
-# ordering by cost suggests files we should try to clean up
+# prints the base64 of the path in case the filename contains
+# non-printable characters. also prints info from the lstat call :
+# path, size, uid, gid, atime, mtime, ctime, type (f,d etc.),
+# inode number and number of hard links
 from mpi4py import MPI
 from ParallelWalk import ParallelWalk
 import os
@@ -12,7 +12,6 @@ import sys
 import stat
 import time
 import base64
-now=int(time.time())
 
 class pstat(ParallelWalk):
     """
@@ -20,8 +19,7 @@ class pstat(ParallelWalk):
     and ProcessDir methods. Need to modify this once we have the
     function signatures updated to pass in the lstat info if it has it.
     It uses the results mechanism to return the total size in the
-    results. Need to make results a tuple and return the total cost
-    (based on ctime) and the total waste (based on atime) as well.
+    results.
     """
     _file_type_dict={
         stat.S_IFSOCK : 's',
@@ -49,11 +47,13 @@ class pstat(ParallelWalk):
             a=s.st_atime
             m=s.st_mtime
             c=s.st_ctime
+            i=s.st_ino
+            n=s.st_nlink
             t='X' # default t to 'X', override in next section if needed
             if s.st_mode in pstat._file_type_dict :
                 t=pstat._file_type_dict[s.st_mode]
-            out='%s\t%d\t%d\t%d\t%d\t%d\t%d\t%s\t%.9f\n' % \
-                (base64.b64encode(path),sz,u,g,a,m,c,t,self.cost(sz,a))
+            out='%s\t%d\t%d\t%d\t%d\t%d\t%d\t%s\t%d\t%d\n' % \
+                (base64.b64encode(path),sz,u,g,a,m,c,t,i,n)
             self.output_file.write(out)
         except Exception, err :
             sys.stderr.write('ERROR: %s\n' % str(err))
@@ -66,18 +66,6 @@ class pstat(ParallelWalk):
     def ProcessDir(self, path, s) :
         self.ProcessFile(path, s)
 
-    def cost(self,sz,camtime) :
-        """
-        Calculate a cost for a file based on the passed in time on the
-        inode [cam]time value and the size.
-        """
-        # size in TiB (magic numner is bytes in a TiB)
-        tib=1.0*sz/107374182
-        # years since the last [cam]time (magic number is
-        # seconds in a (non-leap) year )
-        yrs=1.0*(self.now-camtime)/31536000
-        return tib*yrs*self.cost_tib_year
-
 if __name__ == "__main__":
     if len(sys.argv) != 3 :
         print "usage : printfile <start dir> <output dir>"
@@ -89,7 +77,6 @@ if __name__ == "__main__":
     workers = comm.size
 
     # create the output file for this rank
-    # and set the cost per terabyte per year
     num='%02d' % (rank)
     output_file=open(sys.argv[2]+'/'+num+'.out','w')
 
@@ -100,8 +87,6 @@ if __name__ == "__main__":
     # would be better to somehow specify these in a subclassed
     # constructor
     crawler.output_file=output_file
-    crawler.cost_tib_year=150.00
-    crawler.now=int(time.time())
     r=crawler.Execute(start_dir)
 
     # report results if this is the rank 0 worker
