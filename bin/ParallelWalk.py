@@ -1,13 +1,16 @@
 # Copyright Genome Research Ltd
 # Author gmpc@sanger.ac.uk
 # This program is released under the GNU Public License V2 or later (GPLV2+)
+from __future__ import print_function
 from mpi4py import MPI
+import sys
 import os
 import random
 import stat
 import readdir
 import time
 from collections import deque
+
 class ParallelWalk():
     """This class implements a parallel directory walking algorithm described 
     by LaFon, Misra and Bringhurst
@@ -176,8 +179,8 @@ class ParallelWalk():
             else:
                 self.ProcessFile(filename,s)
         except OSError as error:
-            print "cannot access `%s':" % filename,
-            print os.strerror(error.errno)
+            print("cannot access %s : %s" % \
+                (filename, os.strerror(error.errno)), file=sys.stderr)
         return()
 
     def _AskForWork(self):
