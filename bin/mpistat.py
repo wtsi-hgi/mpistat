@@ -29,11 +29,11 @@ class pstat(ParallelWalk):
         stat.S_IFREG : 'f',
         stat.S_IFBLK : 'b',
         stat.S_IFDIR : 'd',
-        stat.S_IFCHR : 'c'
+        stat.S_IFCHR : 'c',
         stat.S_IFIFO : 'F'
     }
 
-    def stat_line(self, path) :
+    def stat_line(self, path, s) :
         """
         print out the stat information into a tab seperated file.
         One file produced for each mpi rank. They all need to be
@@ -53,10 +53,10 @@ class pstat(ParallelWalk):
             if s.st_mode in pstat._file_type_dict :
                 t=pstat._file_type_dict[s.st_mode]
             out='%s\t%d\t%d\t%d\t%d\t%d\t%d\t%s\t%.9f\n' % \
-                (base64.b64encode(path),sz,u,g,a,m,c,t,cost(sz,a))
+                (base64.b64encode(path),sz,u,g,a,m,c,t,self.cost(sz,a))
             self.output_file.write(out)
-        except :
-            pass
+        except Exception, err :
+            sys.stderr.write('ERROR: %s\n' % str(err))
 
     def ProcessFile(self, path, s):
         if s is None :
@@ -76,7 +76,7 @@ class pstat(ParallelWalk):
         # years since the last [cam]time (magic number is
         # seconds in a (non-leap) year )
         yrs=1.0*(self.now-camtime)/31536000
-        return tb*yrs*self.cost_tb_year
+        return tib*yrs*self.cost_tib_year
 
 if __name__ == "__main__":
     if len(sys.argv) != 3 :
@@ -100,7 +100,7 @@ if __name__ == "__main__":
     # would be better to somehow specify these in a subclassed
     # constructor
     crawler.output_file=output_file
-    crawler.cost_tb_year=150.00
+    crawler.cost_tib_year=150.00
     crawler.now=int(time.time())
     r=crawler.Execute(start_dir)
 

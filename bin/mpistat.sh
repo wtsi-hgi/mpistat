@@ -12,6 +12,9 @@
 
 # add some argument checking here rather than let the python deal with it when the job has started...
 
+# cd to the script directory
+cd "$( dirname "${BASH_SOURCE[0]}" )"
+
 # bsub the job
-bsub -q normal -o $1 -e $2 -R"span[ptile=1] select[mem>4000] rusage[mem=4000]" -M4000 -n$3 mpirun /software/pdu/pstat.py $4 $5
+bsub -q normal -o $1 -e $2 -R"span[ptile=1] select[mem>4000] rusage[mem=4000]" -M4000 -n$3 mpirun ./mpistat.py $4 $5
 

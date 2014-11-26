@@ -81,7 +81,7 @@ class ParallelWalk():
         self.finished = False
 
     
-    def ProcessDir(self, directoryname):
+    def ProcessDir(self, directoryname, s):
         """This method is a stub called for each directory the walker 
         encounters.  Extend it for your own needs.
 
@@ -92,7 +92,7 @@ class ParallelWalk():
         pass
 
 
-    def ProcessFile(self, filename):
+    def ProcessFile(self, filename, s):
         """This method is a stub called for each directory the walker 
         encounters.  Extend it for your own needs.
 
@@ -158,7 +158,7 @@ class ParallelWalk():
             # to do a stat.
             s=None
             if filetype == 0:
-                s = self.lstat(filename)
+                s = self._lstat(filename)
                 if stat.S_ISDIR(s.st_mode):
                     filetype = readdir.dirent.DT_DIR
                 else:
@@ -172,7 +172,7 @@ class ParallelWalk():
                         fullname = os.path.join(filename, node.d_name)
                         self.items.appendleft((fullname, node.d_type))
             # Call the processing functions on the directory or file.
-                self.ProcessDir(filenam,s)
+                self.ProcessDir(filename,s)
             else:
                 self.ProcessFile(filename,s)
         except OSError as error:
@@ -222,13 +222,17 @@ class ParallelWalk():
                     self.token = False
 
     def _sendShutdown(self):
-        """Send shutdown signal to the other ranks."""
+        """
+        Send shutdown signal to the other ranks.
+        """
         for dest in range(1, self.workers):
             self.comm.send("Shutdown", dest=dest, tag=3)
 
     def gatherResults(self):
-        """This method defines how summary data is handled. By default results are 
-        gathered to the rank 0 MPI process."""
+        """
+        This method defines how summary data is handled. By default
+        results are gathered to the rank 0 MPI process.
+        """
         data = self.comm.gather(self.results, root=0)
         return(data)
 
@@ -236,11 +240,12 @@ class ParallelWalk():
         self.comm.Free()
 
     def Execute(self, seed):
-        """This method starts the walkers. The rank 0 MPI walker takes a seed parameter,
-        which is the name of the first directory to walk.
-
-        The rank 0 walker will return a list containing the results attributes for all of
-        the walkers. This can be used to print out summary statistics etc.
+        """
+        This method starts the walkers. The rank 0 MPI walker takes a
+        seed parameter, which is the name of the first directory to walk.
+        The rank 0 walker will return a list containing the results
+        attributes for all of the walkers. This can be used to print
+        out summary statistics etc.
         """
         # Initialize the rank0 walker with the seed directory.
         # TODO: Be able to take multiple seeds
@@ -271,9 +276,10 @@ class ParallelWalk():
         self._tidy()
         return(data)
 
-    def lstat(path):
+    def _lstat(self,path):
         """
-        lstat can sometimes by interrupted and return EINTR so wrap the call in a try block
+        lstat can sometimes by interrupted and return EINTR
+        so wrap the call in a try block
         """
         while True:
             try:
