@@ -21,15 +21,27 @@ class pstat(ParallelWalk):
     It uses the results mechanism to return the total size in the
     results.
     """
-    _file_type_dict={
-        stat.S_IFSOCK : 's',
-        stat.S_IFLNK : 'l',
-        stat.S_IFREG : 'f',
-        stat.S_IFBLK : 'b',
-        stat.S_IFDIR : 'd',
-        stat.S_IFCHR : 'c',
-        stat.S_IFIFO : 'F'
-    }
+
+    def _file_type(self,mode) :
+        """
+        Turn the stat mode into it's standard representational character
+        """
+        if stat.S_ISREG(mode) :
+            return 'f'
+        elif stat.S_ISDIR(mode) :
+            return 'd'
+        elif stat.S_ISLNK(mode) :
+            return 'l'
+        elif stat.S_ISSOCK(mode) :
+            return 's'
+        elif stat.S_ISBLK(mode) :
+            return 'b'
+        elif stat.S_ISCHR(mode) :
+            return 'c'
+        elif stat.S_ISFIFO(mode) :
+            return 'F'
+        else :
+            return 'X'
 
     def stat_line(self, path, s) :
         """
@@ -49,9 +61,7 @@ class pstat(ParallelWalk):
             c=s.st_ctime
             i=s.st_ino
             n=s.st_nlink
-            t='X' # default t to 'X', override in next section if needed
-            if s.st_mode in pstat._file_type_dict :
-                t=pstat._file_type_dict[s.st_mode]
+            t=self._file_type(s.st_mode)
             out='%s\t%d\t%d\t%d\t%d\t%d\t%d\t%s\t%d\t%d\n' % \
                 (base64.b64encode(path),sz,u,g,a,m,c,t,i,n)
             self.output_file.write(out)
