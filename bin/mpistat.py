@@ -62,8 +62,9 @@ class pstat(ParallelWalk):
             i=s.st_ino
             n=s.st_nlink
             t=self._file_type(s.st_mode)
-            out='%s\t%d\t%d\t%d\t%d\t%d\t%d\t%s\t%d\t%d\n' % \
-                (base64.b64encode(path),sz,u,g,a,m,c,t,i,n)
+            d=s.st_dev
+            out='%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%s\t%d\t%d\t%s\n' % \
+                (self.prefix,base64.b64encode(path),sz,u,g,a,m,c,t,i,n,d)
             self.output_file.write(out)
         except Exception, err :
             sys.stderr.write('ERROR: %s\n' % str(err))
@@ -77,8 +78,8 @@ class pstat(ParallelWalk):
         self.ProcessFile(path, s)
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3 :
-        print "usage : printfile <start dir> <output dir>"
+    if len(sys.argv) != 4 :
+        print "usage : mpistat <start dir> <output dir> <line prefix>"
         sys.exit(1)
 
     start_dir=sys.argv[1]
@@ -97,6 +98,8 @@ if __name__ == "__main__":
     # would be better to somehow specify these in a subclassed
     # constructor
     crawler.output_file=output_file
+    crawler.prefix=sys.argv[3]
+    print "prefix="+crawler.prefix
     r=crawler.Execute(start_dir)
 
     # report results if this is the rank 0 worker
