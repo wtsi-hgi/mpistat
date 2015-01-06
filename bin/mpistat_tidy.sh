@@ -11,7 +11,13 @@ DATE=`date +%Y%m%d`
 
 # cat the scratch data files to a gzipped output file with a name based on the
 # current date
-cat $BASE/data/$VOL/* | gzip > $BASE/data/${DATE}_${VOL}.dat.gz
+DATA_FILE=$BASE/data/${DATE}_${VOL}.dat.gz
+if [[ -e ${DATA_FILE} ]]
+then
+    echo "Data file ${DATA_FILE} already exists, refusing to clobber."
+else
+    cat $BASE/data/$VOL/* | gzip > ${DATA_FILE}
+fi
 
 # TO DO:
 # run a report generator against it
