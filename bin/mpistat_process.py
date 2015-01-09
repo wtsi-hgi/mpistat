@@ -13,15 +13,23 @@ import base64
 import gzip
 import csv
 import argparse
+import json
 from collections import namedtuple
 from operator import itemgetter
 
-cost_per_TiB_year = 150
+# columns in input file
 filestats_field_names = ['volume', 'b64path', 'size', 'uid', 'gid', 'atime', 'mtime', 'ctime', 'type', 'inode', 'nlink', 'dev']
 
-parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+# default parameters
+cost_per_TiB_year = 150
 
+# handle command-line arguments
+parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+# required arguments
 parser.add_argument("mpistat_input", help="gzip-compressed results from mpistat_tidy")
+# optional arguments
+parser.add_argument("--cost_per_TiB_year", help="cost per TiB-year of storage", default=cost_per_TiB_year)
+parser.add_argument("--output", help="file to output JSON (default: stdout)", default=None) 
 args = parser.parse_args()
 
 def warning(*objs):
@@ -42,16 +50,6 @@ class FileStatsIterable:
 		return self.gzfile.close()
 	def __iter__(self):
 		return self
-
-mpistat_iter = FileStatsIterable(args.mpistat_input)
-
-by_group=dict()
-by_user=dict()
-by_user_group=dict()
-file_types=dict()
-unprintable_files=[]
-zero_length_files=dict()
-
 
 # prepare uid -> username mapping
 uid2username = dict()
@@ -91,6 +89,9 @@ def calculateCost(size, epoch):
 control_chars = ''.join(map(unichr, range(0,32) + range(127,160)))
 control_chars_re = re.compile('[%s]' % re.escape(control_chars))
 
+# set of filenames with unprintable characters
+unprintable_files=[]
+
 # if the filename contains non printable character,
 # it will add it to the unprintable files list
 # and will replace the unprintable characters with '?'
@@ -100,172 +101,170 @@ def ensurePrintableFilename(fname):
 		unprintable_files.append(fname)
 	return fname
 
-###################################
-# the big loop over all the files #
-###################################
+
+# TODO: refactor these into container object
+by_group=dict()
+by_user=dict()
+by_user_group=dict()
+file_types=dict()
+zero_length_files=dict()
 costs=[]
-for filestat in mpistat_iter:
-	filename = base64.b64decode(filestat.b64path)
 
-	# check for filenames with dodgy characters
-	filename = ensurePrintableFilename(filename)
 
-	# cast fields (TODO: necessary?)
-	uid=int(filestat.uid)
-	gid=int(filestat.gid)
-	size=float(filestat.size)
-	atime=float(filestat.atime)
-	mtime=float(filestat.mtime)
-	ctime=float(filestat.ctime)
+def parse_file(mpistat_file):
+	mpistat_iter = FileStatsIterable(mpistat_file)
+
+        ###################################
+	# the big loop over all the files #
+        ###################################
+	for filestat in mpistat_iter:
+		filename = base64.b64decode(filestat.b64path)
+
+		# check for filenames with dodgy characters
+		filename = ensurePrintableFilename(filename)
+		
+		# cast numeric fields 
+		uid=int(filestat.uid)
+		gid=int(filestat.gid)
+		size=float(filestat.size)
+		atime=float(filestat.atime)
+		mtime=float(filestat.mtime)
+		ctime=float(filestat.ctime)
 	
-	# lookup username and group
-	username=getUser(uid)
-	group=getGroup(gid)
+		# lookup username and group
+		username=getUser(uid)
+		group=getGroup(gid)
 
-	# calculate cost since creation, last modification, and last access
-	cost_since_creation = calculateCost(size, ctime)
-	cost_since_modification = calculateCost(size, mtime)
-	cost_since_access = calculateCost(size, atime)
+		# calculate cost since creation, last modification, and last access
+		cost_since_creation = calculateCost(size, ctime)
+		cost_since_modification = calculateCost(size, mtime)
+		cost_since_access = calculateCost(size, atime)
 	
-	# fixme hack to only pay attention to ctime cost
-	cost = cost_since_creation
-	if cost > 0 :
-		costs.append(cost)
+		# fixme hack to only pay attention to ctime cost
+		cost = cost_since_creation
+		if cost > 0 :
+			costs.append(cost)
 
-	# counts by type
-	if filestat.type in file_types :
-		file_types[filestat.type]+=1
-	else :
-		file_types[filestat.type]=1
-	if size == 0 :
-		if filestat.type in zero_length_files :
-			zero_length_files[filestat.type] += 1
+		# counts by type
+		if filestat.type in file_types :
+			file_types[filestat.type]+=1
 		else :
-			zero_length_files[filestat.type] = 1
+			file_types[filestat.type]=1
+		if size == 0 :
+			if filestat.type in zero_length_files :
+				zero_length_files[filestat.type] += 1
+			else :
+				zero_length_files[filestat.type] = 1
 
-	# by user stuff
-	if uid in by_user :
-		tmp=by_user[uid]
-		tmp['total_cost']+=cost
-		tmp['costs'].append(cost)
-	else :
+		# by user stuff
+		if uid in by_user :
+			tmp=by_user[uid]
+			tmp['total_cost']+=cost
+			tmp['costs'].append(cost)
+		else :
+			tmp=dict()
+			tmp['total_cost'] = cost
+			tmp['costs']=[cost]
+			by_user[uid]=tmp
+
+		# by_group stuff
+		if gid in by_group :
+			tmp=by_group[gid]
+			tmp['total_cost'] += cost
+			tmp['costs'].append(cost)
+		else :
+			tmp=dict()
+			tmp['total_cost'] = cost
+			tmp['costs']=[cost]
+			by_group[gid]=tmp
+
+		# by_user_group stuff
+		user_group=str(uid)+'_'+str(gid)
+		if user_group in by_user_group :
+			tmp=by_user_group[user_group]
+			tmp['total_cost'] += cost
+			tmp['costs'].append(cost)
+		else :
+			tmp=dict()
+			tmp['total_cost'] = cost
+			tmp['costs']=[cost]
+			by_user_group[user_group]=tmp
+
+def report():
+	# get the list of total cost per group
+	# and sort it then print it
+	by_group_list=[]
+	for gid in by_group :
 		tmp=dict()
-		tmp['total_cost'] = cost
-		tmp['costs']=[cost]
-		by_user[uid]=tmp
+		tmp['grp']  = getGroup(gid)
+		tmp['cost'] = by_group[gid]['total_cost']
+		tmp['gid']  = gid
+		by_group_list.append(tmp)
+	by_group_list = sorted(by_group_list, key=itemgetter('cost')) 
+	by_group_list.reverse()
+	print()
+	print("top 20 costly groups")
+	for d in by_group_list[:20] :
+		print('%20s\t%10.2f' % (d['grp'],d['cost']))
 
-	# by_group stuff
-	if gid in by_group :
-		tmp=by_group[gid]
-		tmp['total_cost'] += cost
-		tmp['costs'].append(cost)
-	else :
+	# get the list of total cost per user
+	# and sort it then print it
+	by_user_list=[]
+	for u in by_user :
 		tmp=dict()
-		tmp['total_cost'] = cost
-		tmp['costs']=[cost]
-		by_group[gid]=tmp
+		tmp['user']  = getUser(u)
+		tmp['cost'] = by_user[u]['total_cost']
+		tmp['uid']  = u
+		by_user_list.append(tmp)
+	by_user_list = sorted(by_user_list, key=itemgetter('cost')) 
+	by_user_list.reverse()
+	print()
+	print("top 20 costly users")
+	for d in by_user_list[:20] :
+		print('%20s\t%10.2f' % (d['user'],d['cost']))
 
-	# by_user_group stuff
-	user_group=str(uid)+'_'+str(gid)
-	if user_group in by_user_group :
-		tmp=by_user_group[user_group]
-		tmp['total_cost'] += cost
-		tmp['costs'].append(cost)
-	else :
+	# get the list of total cost per user / group
+	# and sort it then print it
+	by_user_group_list=[]
+	for ug in by_user_group :
+		i=ug.find('_')
+		u=int(ug[:i])
+		g=int(ug[i+1:])
 		tmp=dict()
-		tmp['total_cost'] = cost
-		tmp['costs']=[cost]
-		by_user_group[user_group]=tmp
+		tmp['user']  = getUser(u)
+		tmp['group'] = getGroup(g)
+		tmp['cost'] = by_user_group[ug]['total_cost']
+		tmp['uid']  = u
+		tmp['gid']  = g
+		by_user_group_list.append(tmp)
+	by_user_group_list = sorted(by_user_group_list, key=itemgetter('cost')) 
+	by_user_group_list.reverse()
+	print()
+	print("top 40 costly users breakdown by group")
+	for d in by_user_group_list[:40] :
+		print('%20s\t%s\t%10.2f' % (d['user'],d['group'],d['cost']))
 
-# get the list of total cost per group
-# and sort it then print it
-by_group_list=[]
-for gid in by_group :
-	tmp=dict()
-	tmp['grp']  = getGroup(gid)
-	tmp['cost'] = by_group[gid]['total_cost']
-	tmp['gid']  = gid
-	by_group_list.append(tmp)
-by_group_list = sorted(by_group_list, key=itemgetter('cost')) 
-by_group_list.reverse()
-print()
-print("top 20 costly groups")
-for d in by_group_list[:20] :
-	print('%20s\t%10.2f' % (d['grp'],d['cost']))
+	# print number of occurences of each file type
+	print()
+	print("number of inodes of each type")
+	print(file_types)
 
-# get the list of total cost per user
-# and sort it then print it
-by_user_list=[]
-for u in by_user :
-	tmp=dict()
-	tmp['user']  = getUser(u)
-	tmp['cost'] = by_user[u]['total_cost']
-	tmp['uid']  = u
-	by_user_list.append(tmp)
-by_user_list = sorted(by_user_list, key=itemgetter('cost')) 
-by_user_list.reverse()
-print()
-print("top 20 costly users")
-for d in by_user_list[:20] :
-	print('%20s\t%10.2f' % (d['user'],d['cost']))
+	# zero length files
+	print()
+	print("Number of zero length inodes by type")
+	print(str(zero_length_files))
 
-# get the list of total cost per user / group
-# and sort it then print it
-by_user_group_list=[]
-for ug in by_user_group :
-	i=ug.find('_')
-	u=int(ug[:i])
-	g=int(ug[i+1:])
-	tmp=dict()
-	tmp['user']  = getUser(u)
-	tmp['group'] = getGroup(g)
-	tmp['cost'] = by_user_group[ug]['total_cost']
-	tmp['uid']  = u
-	tmp['gid']  = g
-	by_user_group_list.append(tmp)
-by_user_group_list = sorted(by_user_group_list, key=itemgetter('cost')) 
-by_user_group_list.reverse()
-print()
-print("top 40 costly users breakdown by group")
-for d in by_user_group_list[:40] :
-	print('%20s\t%s\t%10.2f' % (d['user'],d['group'],d['cost']))
+	# unprintable files
+	print()
+	print("There are "+str(len(unprintable_files))+" unprintable files : ")
+	for f in unprintable_files :
+		print(f)
 
-# print number of occurences of each file type
-print()
-print("number of inodes of each type")
-print(file_types)
+def main(args):
+	parse_file(args.mpistat_input)
+	report()
 
-# zero length files
-print()
-print("Number of zero length inodes by type")
-print(str(zero_length_files))
 
-# unprintable files
-print()
-print("There are "+str(len(unprintable_files))+" unprintable files : ")
-for f in unprintable_files :
-	print(f)
 
-# sort the files into bins by size
-# want 0, 1-1k, 1k-1m, 1m-1g, 1g-1t, 1t+
-
-#import matplotlib.pyplot as plt
-
-# histogram of overall costs
-#plt.hist(costs,histtype='step', bins=100)
-#plt.savefig('overall_costs.pdf')
-#plt.show()
-
-# do histograms for the top 5 most costly groups
-#for i in by_group_list[:5] :
-#	g=i['grp']
-#	gid=i['gid']
-#	plt.hist(by_group[gid]['costs'],histtype='step', bins=100, normed=True, label=g)
-#plt.legend(loc='upper right')
-#plt.title('Cost histograms for 5 most costly groups')
-#plt.xlabel('cost')
-#plt.ylabel('relative frequency')
-
-# save it as a png
-#plt.savefig('group_costs.png')
-
+if __name__=="__main__":
+	main(args)
