@@ -14,8 +14,9 @@ import gzip
 import csv
 import argparse
 from collections import namedtuple
+from operator import itemgetter
 
-cost_GBP_per_TiB_year = 150
+cost_per_TiB_year = 150
 filestats_field_names = ['volume', 'b64path', 'size', 'uid', 'gid', 'atime', 'mtime', 'ctime', 'type', 'inode', 'nlink', 'dev']
 
 parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -42,7 +43,7 @@ class FileStatsIterable:
 	def __iter__(self):
 		return self
 
-mpistat_iter = FileStatsIterable(args.mpistat_data_file)
+mpistat_iter = FileStatsIterable(args.mpistat_input)
 
 by_group=dict()
 by_user=dict()
@@ -64,17 +65,15 @@ for gr in grp.getgrall():
 	gid2group[gr.gr_gid] = gr.gr_name
 
 def getUser(uid) :
-#	user=str(uid)
 	return uid2username[uid]
 
 def getGroup(gid) :
-#	group=str(gid)
 	return gid2group[gid]
 
 def getAgeDays(epoch) :
-	days=1.0*(now-epoch)/(24*60*60)
+	days=1.0*(now-epoch)/(24.0*60.0*60.0)
 	if days < 0 :
-		days=0
+		days=0.0
 	return days
 
 def getGiB(sz) :
@@ -83,8 +82,9 @@ def getGiB(sz) :
 def calculateCost(size, epoch):
 	size_GiB = getGiB(size)
 	age_days = getAgeDays(epoch)
-	cost_per_GiB_day = cost_GBP_per_TiB_year/365/1024
-	return size_GiB * age_days * cost_per_GiB_day
+	cost_per_GiB_day = cost_per_TiB_year/365.0/1024.0
+	cost = size_GiB * age_days * cost_per_GiB_day
+	return cost
 
 # if the filename contains non printable character,
 # it will add it to the unprintable files list
@@ -134,6 +134,8 @@ for filestat in mpistat_iter:
 	cost = cost_since_creation
 	if cost > 0 :
 		costs.append(cost)
+
+	# counts by type
 	if filestat.type in file_types :
 		file_types[filestat.type]+=1
 	else :
@@ -181,13 +183,12 @@ for filestat in mpistat_iter:
 # get the list of total cost per group
 # and sort it then print it
 by_group_list=[]
-for g in by_group :
+for gid in by_group :
 	tmp=dict()
-	tmp['grp']  = getGroup(g)
-	tmp['cost'] = by_group[g]['total_cost']
-	tmp['gid']  = g
+	tmp['grp']  = getGroup(gid)
+	tmp['cost'] = by_group[gid]['total_cost']
+	tmp['gid']  = gid
 	by_group_list.append(tmp)
-from operator import itemgetter
 by_group_list = sorted(by_group_list, key=itemgetter('cost')) 
 by_group_list.reverse()
 print()
