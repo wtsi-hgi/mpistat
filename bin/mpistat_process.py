@@ -4,7 +4,7 @@
 
 from __future__ import print_function
 
-import re
+import unicodedata, re
 import sys
 import time
 import grp
@@ -49,27 +49,28 @@ by_group=dict()
 by_user=dict()
 by_user_group=dict()
 file_types=dict()
-now=time.time()
 unprintable_files=[]
 zero_length_files=dict()
 
 
-# prepare user dict
+# prepare uid -> username mapping
 uid2username = dict()
 for pw in pwd.getpwall():
 	uid2username[pw.pw_uid] = pw.pw_name
 
-# prepare group dict
+def getUser(uid) :
+	return uid2username[uid]
+
+# prepare gid -> group mapping
 gid2group = dict()
 for gr in grp.getgrall():
 	gid2group[gr.gr_gid] = gr.gr_name
 
-def getUser(uid) :
-	return uid2username[uid]
-
 def getGroup(gid) :
 	return gid2group[gid]
 
+# prepare to calculate cost
+now=time.time()
 def getAgeDays(epoch) :
 	days=1.0*(now-epoch)/(24.0*60.0*60.0)
 	if days < 0 :
@@ -86,22 +87,18 @@ def calculateCost(size, epoch):
 	cost = size_GiB * age_days * cost_per_GiB_day
 	return cost
 
+# prepare to test for unprintable characters
+control_chars = ''.join(map(unichr, range(0,32) + range(127,160)))
+control_chars_re = re.compile('[%s]' % re.escape(control_chars))
+
 # if the filename contains non printable character,
 # it will add it to the unprintable files list
-# but will truncate it to just before the 1st unprintable character in the file
-def check_filename(fname):
-	count=0
-	printable=True
-	dodgy_chars=[]
-	for c in fname :
-		ascii=ord(c)
-		if ascii < 32 or ascii > 126 :
-			printable=False
-			dodgy_chars.append(ascii)
-		if printable :
-			count += 1
-	if not printable :
-		unprintable_files.append((fname[:count],dodgy_chars))
+# and will replace the unprintable characters with '?'
+def ensurePrintableFilename(fname):
+	if control_chars_re.search(fname):
+		fname = control_chars_re.sub('?', fname)
+		unprintable_files.append(fname)
+	return fname
 
 ###################################
 # the big loop over all the files #
@@ -111,7 +108,7 @@ for filestat in mpistat_iter:
 	filename = base64.b64decode(filestat.b64path)
 
 	# check for filenames with dodgy characters
-	check_filename(filename)
+	filename = ensurePrintableFilename(filename)
 
 	# cast fields (TODO: necessary?)
 	uid=int(filestat.uid)
