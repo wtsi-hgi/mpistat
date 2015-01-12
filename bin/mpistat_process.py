@@ -209,7 +209,7 @@ class CostStats:
                 elif (size >= 1024*1024*1024 and size < 1024*1024*1024*1024):
 			self.num_size_1G_1T += 1
                 elif (size > 1024*1024*1024*1024):
-			self.num_size_1T_plug += 1
+			self.num_size_1T_plus += 1
 		else:
 			raise Exception("Invalid size %d" % (size))
 		
