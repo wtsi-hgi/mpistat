@@ -98,10 +98,16 @@ class StatsContext:
 		return days
 
 	def get_user(self, uid):
-		return self._uid2username[uid]
+		if uid in self._uid2username:
+			return self._uid2username[uid]
+		else:
+			return "UID:%d" % uid
 
 	def get_group(self, gid):
-		return self._gid2group[gid]
+		if gid in self._gid2group:
+			return self._gid2group[gid]
+		else:
+			return "GID:%d" % gid
 
 	def get_GiB(self, sz):
 		return (1.0*sz)/(1024.0*1024.0*1024.0)
