@@ -36,7 +36,7 @@ def warning(*objs):
 	"""Print a warning message to standard error"""
 	print("WARNING: ", *objs, file=sys.stderr)
 
-FileStats = namedtuple('FileStats', filestats_field_names)
+FileStatsRow = namedtuple('FileStatsRow', filestats_field_names)
 
 class FileStatsIterable:
 	def __init__(self, filename):
@@ -45,7 +45,7 @@ class FileStatsIterable:
 		self.reader = csv.reader(self.gzfile, dialect='tsv')
 	def next(self):
 		row = self.reader.next()
-		return FileStats._make(row)
+		return FileStatsRow._make(row)
 	def close(self):
 		return self.gzfile.close()
 	def __iter__(self):
@@ -56,7 +56,7 @@ uid2username = dict()
 for pw in pwd.getpwall():
 	uid2username[pw.pw_uid] = pw.pw_name
 
-def getUser(uid) :
+def getUser(uid):
 	return uid2username[uid]
 
 # prepare gid -> group mapping
@@ -64,18 +64,18 @@ gid2group = dict()
 for gr in grp.getgrall():
 	gid2group[gr.gr_gid] = gr.gr_name
 
-def getGroup(gid) :
+def getGroup(gid):
 	return gid2group[gid]
 
 # prepare to calculate cost
 now=time.time()
-def getAgeDays(epoch) :
+def getAgeDays(epoch):
 	days=1.0*(now-epoch)/(24.0*60.0*60.0)
-	if days < 0 :
+	if days < 0:
 		days=0.0
 	return days
 
-def getGiB(sz) :
+def getGiB(sz):
 	return sz/(1024.0*1024.0*1024.0)
 
 def calculateCost(size, epoch):
@@ -142,22 +142,22 @@ def parse_file(mpistat_file):
 	
 		# fixme hack to only pay attention to ctime cost
 		cost = cost_since_creation
-		if cost > 0 :
+		if cost > 0:
 			costs.append(cost)
 
 		# counts by type
-		if filestat.type in file_types :
+		if filestat.type in file_types:
 			file_types[filestat.type]+=1
-		else :
+		else:
 			file_types[filestat.type]=1
-		if size == 0 :
-			if filestat.type in zero_length_files :
+		if size == 0:
+			if filestat.type in zero_length_files:
 				zero_length_files[filestat.type] += 1
-			else :
+			else:
 				zero_length_files[filestat.type] = 1
 
 		# by user stuff
-		if uid in by_user :
+		if uid in by_user:
 			tmp=by_user[uid]
 			tmp['total_cost']+=cost
 			tmp['costs'].append(cost)
@@ -261,8 +261,8 @@ def report():
 		print(f)
 
 def main(args):
-	parse_file(args.mpistat_input)
-	report()
+	parsed_data = parse_file(args.mpistat_input)
+	report(parsed_data)
 
 
 
