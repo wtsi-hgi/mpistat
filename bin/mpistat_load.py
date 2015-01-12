@@ -22,8 +22,7 @@ import mpistat_config
 # the datafiles are of the form YYYYMMDD_VOL#.dat.gz
 # e.g. 20150107_113.dat.gz
 def get_date_string() :
-    return '20150110'
-	#return datetime.datetime.now().strftime('%Y%m%d')
+    return datetime.datetime.now().strftime('%Y%m%d')
 
 # main program
 if __name__ == "__main__":
@@ -41,18 +40,18 @@ if __name__ == "__main__":
         table_sql='''
             create table tlstat (
                 lstat_id serial primary key,
-	            vol int not null,
-	            path text not null,
-	            size bigint not null,
-	            uid bigint not null,
+                vol int not null,
+	        path text not null,
+	        size bigint not null,
+	        uid bigint not null,
     	        gid bigint not null,
-	            atime bigint not null,
-	            mtime bigint not null,
-	            ctime bigint not null,
+	        atime bigint not null,
+	        mtime bigint not null,
+	        ctime bigint not null,
             	type char not null,
-	            inode bigint not null,
-	            hardlinks int not null,
-	            device bigint not null
+	        inode bigint not null,
+	        hardlinks int not null,
+	        device bigint not null
             )
         '''
         db_cur.execute(table_sql)
