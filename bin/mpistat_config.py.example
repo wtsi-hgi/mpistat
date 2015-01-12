@@ -1,0 +1,14 @@
+# lustre volume numbers to process
+VOLUMES=[0,1,4,7]
+
+# where the data files are stored
+DATA_DIR='/path/to/the/gzipped/data/files'
+
+# where to create the FIFO for facilitating the data load
+FIFO_PATH='/tmp/mpistat_fifo'
+
+# postgresql database parameters
+DB_NAME="db_name"
+DB_USER="db_user"
+DB_PASSWD="db_pwd"
+DB_HOST="localhost"
