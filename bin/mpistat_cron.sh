@@ -32,12 +32,12 @@ do
 	JOBID1=$($BASE/mpistat/bin/mpistat.sh $BASE/mpistat/logs/$VOL.out $BASE/mpistat/logs/$VOL.err $WORKERS /lustre/scratch$VOL $BASE/mpistat/data/$VOL $VOL)
 	[[ $JOBID1 =~ $REGEX ]]
 	JOBID1="${BASH_REMATCH[1]}"
-	JOBIDS+=$JOBID1
+	JOBIDS+=($JOBID1)
 	# submit dependent job to clean up after running the crawler
 	JOBID2=$(bsub -o $BASE/mpistat/logs -e $BASE/mpistat/logs -G systest-grp -q normal -w "done($JOBID1)" $BASE/mpistat/bin/mpistat_tidy.sh $VOL)
 	[[ $JOBID2 =~ $REGEX ]]
 	JOBID2="${BASH_REMATCH[1]}"
-	JOBIDS+=$JOBID2
+	JOBIDS+=($JOBID2)
 done
 
 # Now to set up a final job which will only run when all the other jobs have
