@@ -22,6 +22,7 @@ import mpistat_config
 # the datafiles are of the form YYYYMMDD_VOL#.dat.gz
 # e.g. 20150107_113.dat.gz
 def get_date_string() :
+    return '20150110'
     return datetime.datetime.now().strftime('%Y%m%d')
 
 # main program
@@ -41,22 +42,32 @@ if __name__ == "__main__":
             create table tlstat (
                 lstat_id serial primary key,
                 vol int not null,
-	        path text not null,
-	        size bigint not null,
-	        uid bigint not null,
-    	        gid bigint not null,
-	        atime bigint not null,
-	        mtime bigint not null,
-	        ctime bigint not null,
-            	type char not null,
-	        inode bigint not null,
-	        hardlinks int not null,
-	        device bigint not null
+                path text not null,
+                size bigint not null,
+                uid bigint not null,
+                gid bigint not null,
+                atime bigint not null,
+                mtime bigint not null,
+                ctime bigint not null,
+                type char not null,
+                inode bigint not null,
+                hardlinks int not null,
+                device bigint not null
             )
         '''
         db_cur.execute(table_sql)
 
-		# refresh the fifo
+        # add indices
+        db_cur.execute("create index on tlstat(vol)")
+        db_cur.execute("create index on tlstat(uid)")
+        db_cur.execute("create index on tlstat(gid)")
+        db_cur.execute("create index on tlstat(uid,gid)")
+        db_cur.execute("create index on tlstat(size)")
+        db_cur.execute("create index on tlstat(atime)")
+        db_cur.execute("create index on tlstat(mtime)")
+        db_cur.execute("create index on tlstat(ctime)")
+
+        # refresh the fifo
         if os.path.exists(mpistat_config.FIFO_PATH) :
             os.unlink(mpistat_config.FIFO_PATH)
         os.mkfifo(mpistat_config.FIFO_PATH)
@@ -70,18 +81,25 @@ if __name__ == "__main__":
             my_env['PGPASSWORD']=mpistat_config.DB_PASSWD
             sql="COPY tlstat(vol,path,size,uid,gid,atime,mtime,ctime,type,inode,hardlinks,device) FROM '%s'" % (mpistat_config.FIFO_PATH)
             proc1=subprocess.Popen(['psql94','-U',mpistat_config.DB_USER,'-h',mpistat_config.DB_HOST,'-d',mpistat_config.DB_NAME,'-c',sql],env=my_env)
-            
+
             # read in chunks from the gzipped data file and write to the fifo
             fname=mpistat_config.DATA_DIR+'/'+date_str+'_'+str(vol)+'.dat.gz'
             fifo=open(mpistat_config.FIFO_PATH,'wb')
             fh=gzip.open(fname,'rb')
+            c=0
             while True:
-            	dat=fh.read(8388608)
-            	if dat == "" :
-            		break
-            	fifo.write(dat)
+                c += 1
+                print("writing to fifo..."+str(c))
+                dat=fh.read(8388608)
+                if dat == "" :
+                    break
+                fifo.write(dat)
+            proc1.terminate()
 
-        # add indices
+        # clean up
+        print("cleaning up")
+        db_cur.close()
+        db_conn.close()
 
     except Exception as e:
         print(str(e), file=sys.stderr)

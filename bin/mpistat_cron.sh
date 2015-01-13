@@ -22,15 +22,33 @@ REGEX="Job <([0-9]+)> is submitted to queue <normal>."
 LOG=/dev/null
 exec > $LOG 2>&1 
 
+# keep track of all jobs kicked off
+JOBIDS=()
+
 # loop over lustre volumes to process
 for VOL in 113 114
 do
 	# submit the mpistat crawler job
-	JOBID=$($BASE/mpistat/bin/mpistat.sh $BASE/mpistat/logs/$VOL.out $BASE/mpistat/logs/$VOL.err $WORKERS /lustre/scratch$VOL $BASE/mpistat/data/$VOL $VOL)
-	[[ $JOBID =~ $REGEX ]]
-	JOBID="${BASH_REMATCH[1]}"
-
+	JOBID1=$($BASE/mpistat/bin/mpistat.sh $BASE/mpistat/logs/$VOL.out $BASE/mpistat/logs/$VOL.err $WORKERS /lustre/scratch$VOL $BASE/mpistat/data/$VOL $VOL)
+	[[ $JOBID1 =~ $REGEX ]]
+	JOBID1="${BASH_REMATCH[1]}"
+	JOBIDS+=$JOBID1
 	# submit dependent job to clean up after running the crawler
-	bsub -o $BASE/mpistat/logs -e $BASE/mpistat/logs -G systest-grp -q normal -w "done($JOBID)" $BASE/mpistat/bin/mpistat_tidy.sh $VOL
+	JOBID2=$(bsub -o $BASE/mpistat/logs -e $BASE/mpistat/logs -G systest-grp -q normal -w "done($JOBID1)" $BASE/mpistat/bin/mpistat_tidy.sh $VOL)
+	[[ $JOBID2 =~ $REGEX ]]
+	JOBID2="${BASH_REMATCH[1]}"
+	JOBIDS+=$JOBID2
 done
 
+# Now to set up a final job which will only run when all the other jobs have
+# finished. This job loads the data generated for the day into postgresql
+
+# build the dependency string
+DEPENDS=""
+for JOBID in "${JOBIDS[@]}"; do
+        DEPENDS="$DEPENDS && done($JOBID)"
+done
+DEPENDS=${DEPENDS:3}
+
+# submit the load job
+bsub -o  $BASE/mpistat/logs -e $BASE/mpistat/logs -G systest-grp -q normal -w "$DEPENDS" $BASE/mpistat/bin/mpistat_load.sh
