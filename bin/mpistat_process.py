@@ -14,6 +14,7 @@ import gzip
 import csv
 import argparse
 import json
+import string
 from collections import namedtuple
 from operator import itemgetter
 
@@ -38,7 +39,7 @@ def warning(*objs):
 
 FileStatsRow = namedtuple('FileStatsRow', filestats_field_names)
 
-class FileStatsIterable:
+class FileStatsRowIterable:
 	def __init__(self, filename):
 		csv.register_dialect('tsv', delimiter="\t", quoting=csv.QUOTE_NONE)
 		self.gzfile = gzip.open(filename, "r")
@@ -51,58 +52,13 @@ class FileStatsIterable:
 	def __iter__(self):
 		return self
 
-# prepare uid -> username mapping
-uid2username = dict()
-for pw in pwd.getpwall():
-	uid2username[pw.pw_uid] = pw.pw_name
+def enum(**enums):
+	return type('Enum', (), enums)
 
-def getUser(uid):
-	return uid2username[uid]
-
-# prepare gid -> group mapping
-gid2group = dict()
-for gr in grp.getgrall():
-	gid2group[gr.gr_gid] = gr.gr_name
-
-def getGroup(gid):
-	return gid2group[gid]
-
-# prepare to calculate cost
-now=time.time()
-def getAgeDays(epoch):
-	days=1.0*(now-epoch)/(24.0*60.0*60.0)
-	if days < 0:
-		days=0.0
-	return days
-
-def getGiB(sz):
-	return sz/(1024.0*1024.0*1024.0)
-
-def calculateCost(size, epoch):
-	size_GiB = getGiB(size)
-	age_days = getAgeDays(epoch)
-	cost_per_GiB_day = cost_per_TiB_year/365.0/1024.0
-	cost = size_GiB * age_days * cost_per_GiB_day
-	return cost
-
-# prepare to test for unprintable characters
-control_chars = ''.join(map(unichr, range(0,32) + range(127,160)))
-control_chars_re = re.compile('[%s]' % re.escape(control_chars))
-
-# set of filenames with unprintable characters
-unprintable_files=[]
-
-# if the filename contains non printable character,
-# it will add it to the unprintable files list
-# and will replace the unprintable characters with '?'
-def ensurePrintableFilename(fname):
-	if control_chars_re.search(fname):
-		fname = control_chars_re.sub('?', fname)
-		unprintable_files.append(fname)
-	return fname
-
+FileType = enum(FILE = 'f', DIR = 'd', LINK = 'l')
 
 # TODO: refactor these into container object
+unprintable_files=[]
 by_group=dict()
 by_user=dict()
 by_user_group=dict()
@@ -110,161 +66,263 @@ file_types=dict()
 zero_length_files=dict()
 costs=[]
 
+class StatsContext:
+	def __init__(self, cost_per_TiB_year=150):
+		# prepare uid -> username mapping
+		self._uid2username = dict()
+		for pw in pwd.getpwall():
+			self._uid2username[pw.pw_uid] = pw.pw_name
 
-def parse_file(mpistat_file):
-	mpistat_iter = FileStatsIterable(mpistat_file)
+		# prepare gid -> group mapping
+		self._gid2group = dict()
+		for gr in grp.getgrall():
+			self._gid2group[gr.gr_gid] = gr.gr_name
 
-        ###################################
-	# the big loop over all the files #
-        ###################################
-	for filestat in mpistat_iter:
+		# prepare to calculate cost
+		self.now=time.time()
+		self.cost_per_TiB_year = cost_per_TiB_year
+
+		# prepare to test for unprintable characters
+		control_chars = ''.join(map(unichr, range(0,32) + range(127,160)))
+		self._control_chars_re = re.compile('[%s]' % re.escape(control_chars))
+		
+	def ensure_printable_filename(self, fname):
+		if self._control_chars_re.search(fname):
+			fname = self._control_chars_re.sub('?', fname)
+		return fname
+		
+	def get_age_days(self, epoch):
+		days=1.0*(self.now-epoch)/(24.0*60.0*60.0)
+		if days < 0:
+			days=0.0
+		return days
+
+	def get_user(self, uid):
+		if uid in self._uid2username:
+			return self._uid2username[uid]
+		else:
+			return "UID:%d" % uid
+
+	def get_group(self, gid):
+		if gid in self._gid2group:
+			return self._gid2group[gid]
+		else:
+			return "GID:%d" % gid
+
+	def get_GiB(self, sz):
+		return (1.0*sz)/(1024.0*1024.0*1024.0)
+
+	def get_cost(self, size, epoch):
+		size_GiB = self.get_GiB(size)
+		age_days = self.get_age_days(epoch)
+		cost_per_GiB_day = 1.0*self.cost_per_TiB_year/365.0/1024.0
+		cost = 1.0*size_GiB * age_days * cost_per_GiB_day
+		return cost
+
+class CostStatsByUserGroup:
+	def __init__(self):
+		self._by_username = dict()
+		self._by_group = dict()
+		self._by_username_group = dict()
+		self.total = CostStats()
+
+	def add_file_cost_stats(self, file_cost_stats):
+		self.total.add_file_cost_stats(file_cost_stats)
+
+		if not file_cost_stats.username in self._by_username:
+			self._by_username[file_cost_stats.username] = CostStats()
+		self._by_username[file_cost_stats.username].add_file_cost_stats(file_cost_stats)
+
+		if not file_cost_stats.group in self._by_group:
+			self._by_group[file_cost_stats.group] = CostStats()
+		self._by_group[file_cost_stats.group].add_file_cost_stats(file_cost_stats)
+
+		username_group = file_cost_stats.username + "_" + file_cost_stats.group
+		if not username_group in self._by_username_group:
+			self._by_username_group[username_group] = CostStats()
+		self._by_username_group[username_group].add_file_cost_stats(file_cost_stats)
+
+	def usernames(self):
+		return self._by_username.keys()
+
+	def get_username_cost_stats(self, username):
+		return self._by_username[username]
+
+	def groups(self):
+		return self._by_group.keys()
+
+	def get_group_cost_stats(self, group):
+		return self._by_group[group]
+
+	def username_groups(self):
+		return self._by_username_group.keys()
+
+	def get_username_group_cost_stats(self, username_group):
+		return self._by_username_group[username_group]
+
+	def __str__(self):
+		total_str = "%s: %s\n" % ("total", str(self.total))
+		username_strs = ["user %s: %s\n" % (username, str(self.get_username_cost_stats(username))) for username in self.usernames()]
+		group_strs = ["group %s: %s\n" % (group, str(self.get_group_cost_stats(group))) for group in self.groups()]
+		username_group_strs = ["%s: %s\n" % (username_group, str(self.get_username_group_cost_stats(username_group))) for username_group in self.username_groups()]
+		return total_str + "".join(username_strs) + "".join(group_strs) + "".join(username_group_strs)
+
+	def _json(self):
+		return {'total': self.total, 'by_username': self._by_username, 'by_group': self._by_group, 'by_username_group': self._by_username_group}
+
+class CostStats:
+	def __init__(self):
+		self.num_dirs = 0
+		self.num_files = 0
+		self.num_links = 0
+		self.num_othertype = 0
+		self.num_unprintable = 0 
+		self.num_size_0 = 0
+		self.num_size_1_1k = 0
+		self.num_size_1k_1M = 0
+		self.num_size_1M_1G = 0
+		self.num_size_1G_1T = 0
+		self.num_size_1T_plus = 0
+		self.cost_since_access = 0
+		self.cost_since_modify = 0
+		self.cost_since_create = 0
+	
+	def add_file_cost_stats(self, file_cost_stats):
+		# add to type count
+		if file_cost_stats.type == FileType.FILE:
+			self.num_files += 1
+		elif file_cost_stats.type == FileType.DIR:
+			self.num_dirs += 1
+		elif file_cost_stats.type == FileType.LINK:
+			self.num_links += 1
+		else:
+			self.num_othertype += 1
+
+		# files with unprintable chars
+		if not file_cost_stats.printable:
+			self.num_unprintable += 1
+
+		# add to size histogram bin
+		size = file_cost_stats.size
+		if (size == 0):
+			self.num_size_0 += 1
+		elif (size > 0 and size < 1024):
+			self.num_size_1_1k += 1
+                elif (size >= 1024 and size < 1024*1024):
+			self.num_size_1k_1M += 1
+		elif (size >= 1024*1024 and size < 1024*1024*1024):
+			self.num_size_1M_1G += 1
+                elif (size >= 1024*1024*1024 and size < 1024*1024*1024*1024):
+			self.num_size_1G_1T += 1
+                elif (size > 1024*1024*1024*1024):
+			self.num_size_1T_plus += 1
+		else:
+			raise Exception("Invalid size %d" % (size))
+		
+		# add to costs
+		self.cost_since_create += file_cost_stats.cost_since_create
+		self.cost_since_modify += file_cost_stats.cost_since_modify
+		self.cost_since_access += file_cost_stats.cost_since_access
+
+	def __str__(self):
+		return("dirs=%d files=%d links=%d othertypes=%d unprintable=%d size==0=%d 1<=size<1k=%d 1k<=size<1M=%d 1M<=size<1G=%d 1G<=size<1T=%d size>1T=%d cost_since_access=%f cost_since_modify=%f cost_since_create=%f" % (self.num_dirs, self.num_files, self.num_links, self.num_othertype, self.num_unprintable , self.num_size_0, self.num_size_1_1k, self.num_size_1k_1M, self.num_size_1M_1G, self.num_size_1G_1T, self.num_size_1T_plus, self.cost_since_access, self.cost_since_modify, self.cost_since_create))
+
+	def _json(self):
+		return self.__dict__
+		
+class CostStatsByDir:
+	def __init__(self):
+		self._by_dir = dict()
+		
+	def add_file_cost_stats(self, file_cost_stats):
+		path_comps = string.split(file_cost_stats.filename, sep="/")[1:]
+		paths = ["/"]
+		for idx, path_comp in enumerate(path_comps[:-1], start=1):
+			paths.append("/" + string.join(path_comps[0:idx],sep="/"))
+
+		for path in paths:
+			if not path in self._by_dir:
+				self._by_dir[path] = CostStatsByUserGroup()
+			self._by_dir[path].add_file_cost_stats(file_cost_stats)
+		
+	def dirs(self):
+		return self._by_dir.keys()
+
+	def get_dir_cost_stats(self, path):
+		return self._by_dir[path]
+
+	def __str__(self):
+		dir_strs = ["dir %s: %s\n" % (path, str(self.get_dir_cost_stats(path))) for path in self.dirs()]
+		return "".join(dir_strs)
+
+	def _json(self):
+		return self._by_dir
+
+class FileCostStats:
+	def __init__(self, context, filestat):
 		filename = base64.b64decode(filestat.b64path)
 
 		# check for filenames with dodgy characters
-		filename = ensurePrintableFilename(filename)
+		self.filename = context.ensure_printable_filename(filename)
 		
-		# cast numeric fields 
+		# was the filename printable?
+		self.printable = (filename == self.filename)
+
+		# uid / username 
 		uid=int(filestat.uid)
+		self.username=context.get_user(uid)
+
+		# gid / group
 		gid=int(filestat.gid)
-		size=float(filestat.size)
-		atime=float(filestat.atime)
-		mtime=float(filestat.mtime)
-		ctime=float(filestat.ctime)
-	
-		# lookup username and group
-		username=getUser(uid)
-		group=getGroup(gid)
+		self.group=context.get_group(gid)
+
+		# type
+		self.type = filestat.type
+
+		# size
+		self.size=int(filestat.size)
 
 		# calculate cost since creation, last modification, and last access
-		cost_since_creation = calculateCost(size, ctime)
-		cost_since_modification = calculateCost(size, mtime)
-		cost_since_access = calculateCost(size, atime)
-	
-		# fixme hack to only pay attention to ctime cost
-		cost = cost_since_creation
-		if cost > 0:
-			costs.append(cost)
+		self.cost_since_create = context.get_cost(self.size, int(filestat.ctime))
+		self.cost_since_modify = context.get_cost(self.size, int(filestat.mtime))
+		self.cost_since_access = context.get_cost(self.size, int(filestat.atime))
 
-		# counts by type
-		if filestat.type in file_types:
-			file_types[filestat.type]+=1
-		else:
-			file_types[filestat.type]=1
-		if size == 0:
-			if filestat.type in zero_length_files:
-				zero_length_files[filestat.type] += 1
-			else:
-				zero_length_files[filestat.type] = 1
+class MPIStats:
+	def __init__(self, input_file, cost_per_TiB_year=150):
+		self._mpistat_iter = FileStatsRowIterable(input_file)
 
-		# by user stuff
-		if uid in by_user:
-			tmp=by_user[uid]
-			tmp['total_cost']+=cost
-			tmp['costs'].append(cost)
-		else :
-			tmp=dict()
-			tmp['total_cost'] = cost
-			tmp['costs']=[cost]
-			by_user[uid]=tmp
+		self._context = StatsContext(cost_per_TiB_year)
 
-		# by_group stuff
-		if gid in by_group :
-			tmp=by_group[gid]
-			tmp['total_cost'] += cost
-			tmp['costs'].append(cost)
-		else :
-			tmp=dict()
-			tmp['total_cost'] = cost
-			tmp['costs']=[cost]
-			by_group[gid]=tmp
+		# main data object (stats by path component)
+		self._cost_stats_by_dir = CostStatsByDir()
 
-		# by_user_group stuff
-		user_group=str(uid)+'_'+str(gid)
-		if user_group in by_user_group :
-			tmp=by_user_group[user_group]
-			tmp['total_cost'] += cost
-			tmp['costs'].append(cost)
-		else :
-			tmp=dict()
-			tmp['total_cost'] = cost
-			tmp['costs']=[cost]
-			by_user_group[user_group]=tmp
+		# parse all the data into stats objects
+		for filestat in self._mpistat_iter:
+			self.add_file(filestat)
 
-def report():
-	# get the list of total cost per group
-	# and sort it then print it
-	by_group_list=[]
-	for gid in by_group :
-		tmp=dict()
-		tmp['grp']  = getGroup(gid)
-		tmp['cost'] = by_group[gid]['total_cost']
-		tmp['gid']  = gid
-		by_group_list.append(tmp)
-	by_group_list = sorted(by_group_list, key=itemgetter('cost')) 
-	by_group_list.reverse()
-	print()
-	print("top 20 costly groups")
-	for d in by_group_list[:20] :
-		print('%20s\t%10.2f' % (d['grp'],d['cost']))
+	def add_file(self, filestat):
+		file_cost_stats = FileCostStats(self._context, filestat)
+		self._cost_stats_by_dir.add_file_cost_stats(file_cost_stats)
 
-	# get the list of total cost per user
-	# and sort it then print it
-	by_user_list=[]
-	for u in by_user :
-		tmp=dict()
-		tmp['user']  = getUser(u)
-		tmp['cost'] = by_user[u]['total_cost']
-		tmp['uid']  = u
-		by_user_list.append(tmp)
-	by_user_list = sorted(by_user_list, key=itemgetter('cost')) 
-	by_user_list.reverse()
-	print()
-	print("top 20 costly users")
-	for d in by_user_list[:20] :
-		print('%20s\t%10.2f' % (d['user'],d['cost']))
+	def get_cost_stats(self):
+		return self._cost_stats_by_dir
 
-	# get the list of total cost per user / group
-	# and sort it then print it
-	by_user_group_list=[]
-	for ug in by_user_group :
-		i=ug.find('_')
-		u=int(ug[:i])
-		g=int(ug[i+1:])
-		tmp=dict()
-		tmp['user']  = getUser(u)
-		tmp['group'] = getGroup(g)
-		tmp['cost'] = by_user_group[ug]['total_cost']
-		tmp['uid']  = u
-		tmp['gid']  = g
-		by_user_group_list.append(tmp)
-	by_user_group_list = sorted(by_user_group_list, key=itemgetter('cost')) 
-	by_user_group_list.reverse()
-	print()
-	print("top 40 costly users breakdown by group")
-	for d in by_user_group_list[:40] :
-		print('%20s\t%s\t%10.2f' % (d['user'],d['group'],d['cost']))
+	def get_cost_stats_json(self):
+		return json.dumps(self.get_cost_stats(), cls=AutoJSONEncoder)
 
-	# print number of occurences of each file type
-	print()
-	print("number of inodes of each type")
-	print(file_types)
+	def __str__(self):
+		return str(self.get_cost_stats())
 
-	# zero length files
-	print()
-	print("Number of zero length inodes by type")
-	print(str(zero_length_files))
-
-	# unprintable files
-	print()
-	print("There are "+str(len(unprintable_files))+" unprintable files : ")
-	for f in unprintable_files :
-		print(f)
+class AutoJSONEncoder(json.JSONEncoder):
+    def default(self, obj):
+        try:
+            return obj._json()
+        except AttributeError:
+            return json.JSONEncoder.default(self, obj)
 
 def main(args):
-	parsed_data = parse_file(args.mpistat_input)
-	report(parsed_data)
-
-
+	stats = MPIStats(input_file=args.mpistat_input, cost_per_TiB_year=150)
+	print(stats.get_cost_stats_json())
 
 if __name__=="__main__":
 	main(args)
