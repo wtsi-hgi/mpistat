@@ -14,6 +14,7 @@ import sys
 import datetime
 import gzip
 import subprocess
+import traceback
 
 # load in the config
 import mpistat_config
@@ -22,7 +23,6 @@ import mpistat_config
 # the datafiles are of the form YYYYMMDD_VOL#.dat.gz
 # e.g. 20150107_113.dat.gz
 def get_date_string() :
-    return '20150110'
     return datetime.datetime.now().strftime('%Y%m%d')
 
 # main program
@@ -67,41 +67,20 @@ if __name__ == "__main__":
         db_cur.execute("create index on tlstat(mtime)")
         db_cur.execute("create index on tlstat(ctime)")
 
-        # refresh the fifo
-        if os.path.exists(mpistat_config.FIFO_PATH) :
-            os.unlink(mpistat_config.FIFO_PATH)
-        os.mkfifo(mpistat_config.FIFO_PATH)
-
         # copy in the data for each lustre volume
         date_str=get_date_string()
         for vol in mpistat_config.VOLUMES :
-
-            # set up the copy from subprocess
-            my_env = os.environ
-            my_env['PGPASSWORD']=mpistat_config.DB_PASSWD
-            sql="COPY tlstat(vol,path,size,uid,gid,atime,mtime,ctime,type,inode,hardlinks,device) FROM '%s'" % (mpistat_config.FIFO_PATH)
-            proc1=subprocess.Popen(['psql94','-U',mpistat_config.DB_USER,'-h',mpistat_config.DB_HOST,'-d',mpistat_config.DB_NAME,'-c',sql],env=my_env)
-
-            # read in chunks from the gzipped data file and write to the fifo
-            fname=mpistat_config.DATA_DIR+'/'+date_str+'_'+str(vol)+'.dat.gz'
-            fifo=open(mpistat_config.FIFO_PATH,'wb')
-            fh=gzip.open(fname,'rb')
-            c=0
-            while True:
-                c += 1
-                print("writing to fifo..."+str(c))
-                dat=fh.read(8388608)
-                if dat == "" :
-                    break
-                fifo.write(dat)
-            proc1.terminate()
+            fname=mpistat_config.DATA_DIR+'/'+date_str+'_'+str(vol)+'.dat'
+            db_cur.copy_from(open(fname),'tlstat',columns=('vol','path','size','uid','gid','atime','mtime','ctime','type','inode','hardlinks','device'),size=1048576)
+            # gzip the data file
+            subprocess.check_call(['gzip', fname])
 
         # clean up
-        print("cleaning up")
         db_cur.close()
         db_conn.close()
 
     except Exception as e:
         print(str(e), file=sys.stderr)
+        traceback.format_exc()  
         sys.exit(1)
 
