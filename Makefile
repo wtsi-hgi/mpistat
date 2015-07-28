@@ -3,7 +3,7 @@ LIBS=-L/software/hgi/pkglocal/libcircle/lib -lcircle
 all : bin/mpistat
 
 bin/mpistat : src/mpistat.c
-        mpicc $(CFLAGS) -o bin/mpistat mpistat.c $(LIBS)
+	mpicc $(CFLAGS) -o bin/mpistat src/mpistat.c $(LIBS)
 
 clean :
-        rm bin/mpistat
+	rm bin/mpistat
