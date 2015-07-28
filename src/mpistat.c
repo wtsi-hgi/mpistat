@@ -14,28 +14,15 @@ FILE *out;
 // global variable containing the directory to start in
 char *start_dir;
 
-// this is the initialise work function
-// it's run on rank 0 once, right at the start
-// to kick things off
-void my_create_some_work(CIRCLE_handle *handle)
+// process work callback
+void process_work(CIRCLE_handle *handle)
 {
-	handle->enqueue(start_dir);
-}
+	// dequeue the next item
 
-// this does some work
-// basically grabs the next item from the queue and process it
-// accordingly. we stick strings on the queue, the first character
-// is 0 or 1 depending on if we have a directory or not
-// the rest is the full path
-void my_process_some_work(CIRCLE_handle *handle)
-{
-	// get the next item from the queue and determine
-	// if it's a directory or not
+    // lstat it and dump the lstat data
 
-	// if it's a directory, write out info about it
-	// and then do a readdir and add all the children to the queue
-
-	// if it's not a directory, lstat it and write out the info
+	// if it's a directory call readdir on it
+    // and add all the items in the directory to the work queue
 
 }
 
@@ -48,13 +35,8 @@ int main(int argc, char **argv) {
 	sprintf(file_name,"%s/%02d.out",argv[1],rank);
 	printf("%s\n",file_name);
 
-	// the create work callback - basically readdir and adding files &
-	// directories to the work queue	
-	CIRCLE_cb_create(&my_create_some_work);
-
-	// the process work callback - this is where the lstat / copy or whatever it
-	// is you want to do happens
-	CIRCLE_cb_process(&my_process_some_work);
+	// the process work callback
+	CIRCLE_cb_process(&process_work);
 
 	// enqueue the initial directory
 	if (rank == 0) {
