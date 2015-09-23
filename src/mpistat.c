@@ -119,7 +119,7 @@ int main(int argc, char **argv) {
     sprintf(item_buf,"%c%s",'d',start_dir);
 
 	// initialise MPI and the libcircle stuff	
-	int rank = CIRCLE_init(CIRCLE_SPLIT_RANDOM);
+	int rank = CIRCLE_init(argc,argv,CIRCLE_SPLIT_RANDOM);
 
 	// open output file for this particular rank
     // (colllated at the end)
