@@ -1,14 +1,9 @@
-# lustre volume numbers to process
-VOLUMES=[0,1,4,7]
-
-# where the data files are stored
-DATA_DIR='/path/to/the/gzipped/data/files'
-
-# where to create the FIFO for facilitating the data load
-FIFO_PATH='/tmp/mpistat_fifo'
-
-# postgresql database parameters
-DB_NAME="db_name"
-DB_USER="db_user"
-DB_PASSWD="db_pwd"
-DB_HOST="localhost"
+# riak nodes - this is suitable for a dev riak cluster as set up
+# by http://docs.basho.com/riak/latest/quickstart/
+riak_nodes=[
+    {'host':'127.0.0.1','pb_port':11087,'http_port':11098},
+    {'host':'127.0.0.1','pb_port':12087,'http_port':12098},
+    {'host':'127.0.0.1','pb_port':13087,'http_port':13098},
+    {'host':'127.0.0.1','pb_port':14087,'http_port':14098},
+    {'host':'127.0.0.1','pb_port':15087,'http_port':15098}
+]
