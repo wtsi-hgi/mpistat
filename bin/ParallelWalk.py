@@ -193,7 +193,7 @@ class ParallelWalk():
     def _tidy(self):
         self.comm.Free()
 
-    def Execute(self, seed):
+    def Execute(self, seeds):
         """
         This method starts the walkers. Seeds are evenly distributed
         amongst the worker nodes. Assumption is that all seeds are valid

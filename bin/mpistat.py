@@ -4,9 +4,10 @@
 # non-printable characters. also prints info from the lstat call :
 # path, size, uid, gid, atime, mtime, ctime, type (f,d etc.),
 # inode number and number of hard links
+from __future__ import print_function
 from mpi4py import MPI
 from ParallelWalk import ParallelWalk
-from Inodes import Inodes
+from Inodes import Inode
 import os
 import pwd
 import sys
@@ -14,18 +15,20 @@ import stat
 import time
 import datetime
 import errno
-
-from __future__ import print_function
+import riak
+import mpistat_config
 
 def ERR(*objs):
     timestamp=datetime.datetime.fromtimestamp(
         time.time()).strftime('[%Y-%m-%d %H:%M:%S]')
     print(timestamp, *objs, file=sys.stderr)
+    sys.stderr.flush()
 
 def LOG(*objs):
     timestamp=datetime.datetime.fromtimestamp(
         time.time()).strftime('[%Y-%m-%d %H:%M:%S]')
     print(timestamp, *objs)
+    sys.stdout.flush()
     
 class mpistat(ParallelWalk):
     """
@@ -45,15 +48,18 @@ class mpistat(ParallelWalk):
         # lstat it
         try :
             s=self._lstat(path)
-        except e:
+        except (IOError, OSError) as e :
             ERR("Failed to lstat '%s' : %s" % (path, os.strerror(e.errno)))
             return
             
         # if it's a directory, get list of files contained within it
         # and add them to the work queue
-        children=os.listdir(path)
-        for child in children :
-            self.items.push(path+'/'+child)
+        type = self._file_type(s.st_mode)
+	children=None
+        if type == 'd' :	
+            children=os.listdir(path)
+            for child in children :
+                self.items.append(path+'/'+child)
 
         # register the information in riak
         # may look at adding in the aggregation up the tree here also
@@ -64,13 +70,13 @@ class mpistat(ParallelWalk):
         Inode(
             client   = self.riak_client,
             path     = path,
-            size     = s.st_size,
-            uid      = s.st_uid,
-            gid      = s.st_gid,
-            type     = self._file_type(s.st_mode),
-            atime    = s.st_atime,
-            mtime    = s.st_mtime,
-            ctime    = s.st_ctime,
+            size     = str(s.st_size),
+            uid      = str(s.st_uid),
+            gid      = str(s.st_gid),
+            type     = type,
+            atime    = str(s.st_atime),
+            mtime    = str(s.st_mtime),
+            ctime    = str(s.st_ctime),
             children = children
         )
 
@@ -111,14 +117,14 @@ if __name__ == "__main__":
 
     # check we have enough arguments
     if len(sys.argv) < 2 :
-        print "usage : mpistat <dir1> [<dir2> <dir3>...<dirN>]"
+        ERR("usage : mpistat <dir1> [<dir2> <dir3>...<dirN>]")
         sys.exit(1)
 
     # get full path for each argument passed in
     # check they are directories which we can open
     # construct seeds list of valid starting points
-    start_dir=sys.argv[1]
-    
+    seeds=sys.argv[1:]
+ 
     # get the MPI communicator 
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
@@ -128,14 +134,15 @@ if __name__ == "__main__":
     LOG("starting mpi worker %d of %d" %(rank,workers))
 
     # init the crawler
-    crawler = pstat(comm, results=0, seeds)
+    results = 0
+    crawler = mpistat(comm, results)
     
     # get a riak client
     crawler.riak_client = riak.RiakClient(nodes=mpistat_config.riak_nodes)
 
     # start processing loop
-    r=crawler.Execute(start_dir)
+    r=crawler.Execute(seeds)
 
     # report results if this is the rank 0 worker
     if rank == 0 :
-        print "Total size of files found was %.2f TiB" % ( sum(r) / (1024.0*1024.0*1024.0*1024.0) )
+        LOG("Total size of files found was %.2f TiB" % ( sum(r) / (1024.0*1024.0*1024.0*1024.0) ))

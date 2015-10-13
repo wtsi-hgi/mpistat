@@ -1,3 +1,4 @@
+from __future__ import print_function
 import riak
 import riak.datatypes
 import json
@@ -19,7 +20,8 @@ class Inode:
         self.inode_map.registers['parent'].assign(path[0:path.rfind('/')])
         if type == 'd' : # set children to empty set initially
             if children :
-                self.inode_map.sets['children'].assign(children) 
+		for child in children :
+	                self.inode_map.sets['children'].add(child) 
         # Thus far, all changes to the user_map object have only been
         # made locally. To commit them to Riak, we have to use the
         # store() method. You can alter Riak Data Types as much as you
@@ -75,5 +77,5 @@ if __name__ == "__main__":
         )
         count += 1
         if (count % 1000 == 0) :
-            print "%d lines processed" % (count,)
+            print("%d lines processed" % (count,))
         #print inode.as_json()
