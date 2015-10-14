@@ -1,5 +1,5 @@
 import re
-import grid
+import grp
 # apply hgi rules for users & groups
 # see rt#447639 and #468451
 # pass in s : lstat buffer data structure
@@ -29,7 +29,7 @@ def hgi_rules(path, s) :
     # so try the first and only try the second if it doesn't apply
     status,gid=hgi_teams_rule(path, s)
     if status :
-        return(status,gid)
+        return (status,gid)
     return hgi_projects_rule(path, s)
 
 # regexes for teams rule
@@ -40,11 +40,11 @@ def hgi_teams_rule(path, s) :
     # file / directory under /lustre/scratch11[3,4,5]/teams/<team>/foo/bar
     # should be owned by group corresponding to the relevant team 
     m=None
-    m1=re_hgi_teams1.compile(path)
+    m1=re_hgi_teams1.match(path)
     if m1 :
         m=m1
     else :
-        m2=re_hgi_teams2.compile(path)
+        m2=re_hgi_teams2.match(path)
         if m2 :
             m=m2
         else :
@@ -69,11 +69,11 @@ def hgi_projects_rule(path, s) :
     # file / directory under /lustre/scratch11[3,4,5]/teams/<team>/foo/bar
     # should be owned by group corresponding to the relevant team 
     m=None
-    m1=re_hgi_teams1.compile(path)
+    m1=re_hgi_teams1.match(path)
     if m1 :
         m=m1
     else :
-        m2=re_hgi_teams2.compile(path)
+        m2=re_hgi_teams2.match(path)
         if m2 :
             m=m2
         else :
@@ -81,7 +81,7 @@ def hgi_projects_rule(path, s) :
     if m :
         project=m.group(1)
         gid=grp.getgrnam(project)[2]
-        if sb.dt_gid != gid :
+        if s.dt_gid != gid :
             # inode has wrong group owner : change it
             LOG("changing group owner of %s from %s to %s" % 
                     (path, grp.getgrgid(s.st_gid)[0], project))

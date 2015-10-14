@@ -17,7 +17,7 @@ import datetime
 import errno
 import riak
 import mpistat_config
-import hgi_rules
+from hgi_rules import hgi_rules
 
 def ERR(*objs):
     timestamp=datetime.datetime.fromtimestamp(
