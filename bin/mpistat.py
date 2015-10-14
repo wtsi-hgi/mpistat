@@ -57,8 +57,8 @@ class mpistat(ParallelWalk):
         # if the rules change the gid then we get that value returned
         # returns -1 if nothing changed
         # so if rules return +ve number then we need to modify the lstat gid
-        s.st_gid=hgi_rules(path, s)
-            
+        status,gid=hgi_rules(path, s)
+     
         # if it's a directory, get list of files contained within it
         # and add them to the work queue
         type = self._file_type(s.st_mode)
@@ -79,7 +79,7 @@ class mpistat(ParallelWalk):
             path     = path,
             size     = str(s.st_size),
             uid      = str(s.st_uid),
-            gid      = str(s.st_gid),
+            gid      = str(gid),
             type     = type,
             atime    = str(s.st_atime),
             mtime    = str(s.st_mtime),
