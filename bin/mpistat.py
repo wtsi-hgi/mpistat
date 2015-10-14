@@ -17,6 +17,7 @@ import datetime
 import errno
 import riak
 import mpistat_config
+import hgi_rules
 
 def ERR(*objs):
     timestamp=datetime.datetime.fromtimestamp(
@@ -51,6 +52,12 @@ class mpistat(ParallelWalk):
         except (IOError, OSError) as e :
             ERR("Failed to lstat '%s' : %s" % (path, os.strerror(e.errno)))
             return
+
+        # apply hgi rules regarding files in lustre (if applicable)
+        # if the rules change the gid then we get that value returned
+        # returns -1 if nothing changed
+        # so if rules return +ve number then we need to modify the lstat gid
+        s.st_gid=hgi_rules(path, s)
             
         # if it's a directory, get list of files contained within it
         # and add them to the work queue
