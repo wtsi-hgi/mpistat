@@ -46,7 +46,7 @@ def hgi_rules(path, s) :
         # is it a directory
         if stat.S_ISDIR(s.st_mode) :
             # if so want to check that stickyguid is set and set it with a chmod if not
-            if not (s.st_mode & 02000 == 01000) :
+            if not (s.st_mode & stat.S_ISGID) :
 		mpistat_common.LOG("setting GID bit on %s" % path)
                 #os.chmod(path, s.st_mode | stat.S_ISGID)
     return gid
