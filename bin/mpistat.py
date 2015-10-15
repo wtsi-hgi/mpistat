@@ -14,7 +14,7 @@ import sys
 import stat
 import riak
 import mpistat_config
-from mpistat_common import LOG, ERR
+import mpistat_common
 from hgi_rules import hgi_rules
 
 class mpistat(ParallelWalk):
@@ -36,20 +36,19 @@ class mpistat(ParallelWalk):
         try :
             s=self._lstat(path)
         except (IOError, OSError) as e :
-            ERR("Failed to lstat '%s' : %s" % (path, os.strerror(e.errno)))
+            mpistat_common.ERR("Failed to lstat '%s' : %s" % (path, os.strerror(e.errno)))
             return
 
         # apply hgi rules regarding files in lustre (if applicable)
         # if the rules change the gid then we get that value returned
         # returns -1 if nothing changed
         # so if rules return +ve number then we need to modify the lstat gid
-        status,gid=hgi_rules(path, s)
+        gid=hgi_rules(path, s)
      
         # if it's a directory, get list of files contained within it
         # and add them to the work queue
-        type = self._file_type(s.st_mode)
 	children=None
-        if type == 'd' :	
+        if stat.S_ISDIR(s.st_mode) :
             children=os.listdir(path)
             for child in children :
                 self.items.append(path+'/'+child)
@@ -60,40 +59,19 @@ class mpistat(ParallelWalk):
         # to avoid data races. locks can easily be handled in riak with
         # a strongly consisten bucket. Can also look at doing the aggregation
         # at the end with some kind of map reduce function instead
-        Inode(
-            client   = self.riak_client,
-            path     = path,
-            size     = str(s.st_size),
-            uid      = str(s.st_uid),
-            gid      = str(gid),
-            type     = type,
-            atime    = str(s.st_atime),
-            mtime    = str(s.st_mtime),
-            ctime    = str(s.st_ctime),
-            children = children
-        )
+#        Inode(
+#            client   = self.riak_client,
+#            path     = path,
+#            size     = str(s.st_size),
+#            uid      = str(s.st_uid),
+#            gid      = str(gid),
+#            type     = type,
+#            atime    = str(s.st_atime),
+#            mtime    = str(s.st_mtime),
+#            ctime    = str(s.st_ctime),
+#            children = children
+#       )
 
-    def _file_type(self,mode) :
-        """
-        Turn the stat mode into it's standard representational character
-        """
-        if stat.S_ISREG(mode) :
-            return 'f'
-        elif stat.S_ISDIR(mode) :
-            return 'd'
-        elif stat.S_ISLNK(mode) :
-            return 'l'
-        elif stat.S_ISSOCK(mode) :
-            return 's'
-        elif stat.S_ISBLK(mode) :
-            return 'b'
-        elif stat.S_ISCHR(mode) :
-            return 'c'
-        elif stat.S_ISFIFO(mode) :
-            return 'F'
-        else :
-            return 'X'
-        
     def _lstat(self,path):
         """
         lstat can sometimes by interrupted and return EINTR
@@ -110,7 +88,7 @@ if __name__ == "__main__":
 
     # check we have enough arguments
     if len(sys.argv) < 2 :
-        ERR("usage : mpistat <dir1> [<dir2> <dir3>...<dirN>]")
+        mpistat_common.ERR("usage : mpistat <dir1> [<dir2> <dir3>...<dirN>]")
         sys.exit(1)
 
     # get full path for each argument passed in
@@ -124,7 +102,7 @@ if __name__ == "__main__":
     workers = comm.size
 
     # start log message
-    LOG("starting mpi worker %d of %d" %(rank,workers))
+    mpistat_common.LOG("starting mpi worker %d of %d" %(rank,workers))
 
     # init the crawler
     results = 0
@@ -138,4 +116,4 @@ if __name__ == "__main__":
 
     # report results if this is the rank 0 worker
     if rank == 0 :
-        LOG("Total size of files found was %.2f TiB" % ( sum(r) / (1024.0*1024.0*1024.0*1024.0) ))
+        mpistat_common.LOG("Total size of files found was %.2f TiB" % ( sum(r) / (1024.0*1024.0*1024.0*1024.0) ))

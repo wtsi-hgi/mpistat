@@ -1,6 +1,8 @@
 import re
 import grp
-from mpistat_common import LOG,ERR
+import stat
+import os
+import mpistat_common
 
 # apply hgi rules for users & groups
 # see rt#447639 and #468451
@@ -25,73 +27,29 @@ teams={
     "tyler-smith" : "team19",
     "zeggini" : "team144"
 }
+re_hgi_rules=re.compile(r"^((\/lustre\/scratch11[34]|\/lustre/scratch115\/realdata\/mdt[0123])|\/nfs\/humgen01)\/(teams|projects)\/([^/]+)\/.*$")
 
 def hgi_rules(path, s) :
-    # only one rule can possibly apply
-    # so try the first and only try the second if it doesn't apply
-    status,gid=hgi_teams_rule(path, s)
-    if status :
-        return (status,gid)
-    else :
-        return hgi_projects_rule(path, s)
-
-# regexes for teams rule
-re_hgi_teams1=re.compile(r"^\/lustre\/scratch11[345]\/teams\/([^/]+)\/.*$")
-re_hgi_teams2=re.compile(r"^\/nfs\/humgen01\/teams\/([^/]+)\/.*$")
-
-def hgi_teams_rule(path, s) :
-    # file / directory under /lustre/scratch11[3,4,5]/teams/<team>/foo/bar
-    # should be owned by group corresponding to the relevant team 
-    m=None
-    m1=re_hgi_teams1.match(path)
-    if m1 :
-        m=m1
-    else :
-        m2=re_hgi_teams2.match(path)
-        if m2 :
-            m=m2
-        else :
-            return (False, s.st_gid)
+    gid=s.st_gid
+    m=re_hgi_rules.match(path)
     if m :
-        team=m.group(1)
-        group=teams[team]
+	rule=m.group(3)
+	group=m.group(4)
+	if rule == "teams" :
+		group=teams[group]
         gid=grp.getgrnam(group)[2]
         if s.st_gid != gid :
             # inode has wrong group owner : change it
-            LOG("changing %s group from %s to %s" %
+            mpistat_common.LOG("changing %s group from %s to %s" %
                     (path, grp.getgrgid(s.st_gid)[0], group))
             #os.chown(path,-1,gid)
-            return (True, gid)
-    else :
-        return (False, s.st_gid) 
-
-# regexes for projects rules
-re_hgi_projects1=re.compile(r"^\/lustre\/scratch11[345]\/projects\/([^/]+)\/.*$")
-re_hgi_projects2=re.compile(r"^\/nfs\/humgen01\/projects\/([^/]+)\/.*$")
-
-def hgi_projects_rule(path, s) :
-    # file / directory under /lustre/scratch11[3,4,5]/teams/<team>/foo/bar
-    # should be owned by group corresponding to the relevant team 
-    m=None
-    m1=re_hgi_projects1.match(path)
-    if m1 :
-        m=m1
-    else :
-        m2=re_hgi_projects2.match(path)
-        if m2 :
-            m=m2
-        else :
-            return (False,s.st_gid)
-    if m :
-        project=m.group(1)
-        gid=grp.getgrnam(project)[2]
-        if s.st_gid != gid :
-            # inode has wrong group owner : change it
-            LOG("changing group owner of %s from %s to %s" % 
-                    (path, grp.getgrgid(s.st_gid)[0], project))
-            #os.chown(path,-1,gid)
-            return (True, gid)
-    return (False, s.st_gid)
+        # is it a directory
+        if stat.S_ISDIR(s.st_mode) :
+            # if so want to check that stickyguid is set and set it with a chmod if not
+            if not (s.st_mode & 02000 == 01000) :
+		mpistat_common.LOG("setting GID bit on %s" % path)
+                #os.chmod(path, s.st_mode | stat.S_ISGID)
+    return gid
 
 if __name__ == "__main__" :
 
@@ -113,6 +71,16 @@ if __name__ == "__main__" :
         print hgi_rules(path,s)
 
         path="/nfs/humgen01/projects/helic/pcp.err"
+        print "testing %s" % (path,)
+        s=os.lstat(path)
+        print hgi_rules(path,s)
+
+        path="/lustre/scratch115/realdata/mdt0/projects/ausgen/release-external_X10/20150917/sample_improved_bams_hgi_2/PIL6.bam.bai"
+        s=os.lstat(path)
+        print "testing %s" % (path,)
+        print hgi_rules(path,s)
+
+        path="/lustre/scratch115/realdata/mdt1/teams/hgi/2015july2-resource-pcp.o"
         print "testing %s" % (path,)
         s=os.lstat(path)
         print hgi_rules(path,s)
