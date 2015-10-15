@@ -12,25 +12,11 @@ import os
 import pwd
 import sys
 import stat
-import time
-import datetime
-import errno
 import riak
 import mpistat_config
+from mpistat_common import LOG, ERR
 from hgi_rules import hgi_rules
 
-def ERR(*objs):
-    timestamp=datetime.datetime.fromtimestamp(
-        time.time()).strftime('[%Y-%m-%d %H:%M:%S]')
-    print(timestamp, *objs, file=sys.stderr)
-    sys.stderr.flush()
-
-def LOG(*objs):
-    timestamp=datetime.datetime.fromtimestamp(
-        time.time()).strftime('[%Y-%m-%d %H:%M:%S]')
-    print(timestamp, *objs)
-    sys.stdout.flush()
-    
 class mpistat(ParallelWalk):
     """
     Subclassing the ParallelWalk class to override the ProcessItems
