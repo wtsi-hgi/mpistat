@@ -34,21 +34,30 @@ def hgi_rules(path, s) :
     m=re_hgi_rules.match(path)
     if m :
 	rule=m.group(3)
-	group=m.group(4)
+	newgroup=m.group(4)
 	if rule == "teams" :
-		group=teams[group]
-        gid=grp.getgrnam(group)[2]
+		newgroup=teams[group]
+        gid=grp.getgrnam(newgroup)[2]
         if s.st_gid != gid :
             # inode has wrong group owner : change it
+            oldgroup=grp.getgrgid(s.st_gid)[0]
             mpistat_common.LOG("changing %s group from %s to %s" %
-                    (path, grp.getgrgid(s.st_gid)[0], group))
-            #os.chown(path,-1,gid)
+                    (path, oldgroup, newgroup))
+            try :
+                #os.chown(path,-1,gid)
+            except (IOError, OSError) as e :
+                mpistat_common.ERR("Failed to change group from %s to % for %s : %s" % (oldgroup, newgroup, path, os.strerror(e.errno)))
+
         # is it a directory
         if stat.S_ISDIR(s.st_mode) :
             # if so want to check that stickyguid is set and set it with a chmod if not
             if not (s.st_mode & stat.S_ISGID) :
-		mpistat_common.LOG("setting GID bit on %s" % path)
-                #os.chmod(path, s.st_mode | stat.S_ISGID)
+		mpistat_common.LOG("setting GID sticky bit on %s" % path)
+                try :
+                    #os.chmod(path, s.st_mode | stat.S_ISGID)
+                except (IOError, OSError) as e :
+                    mpistat_common.ERR("Failed set GID sticky bit on '%s' : %s" % (path, os.strerror(e.errno)))
+
     return gid
 
 if __name__ == "__main__" :
