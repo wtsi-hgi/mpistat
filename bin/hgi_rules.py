@@ -3,6 +3,7 @@ import grp
 import stat
 import os
 import mpistat_common
+import errno
 
 # apply hgi rules for users & groups
 # see rt#447639 and #468451
@@ -36,7 +37,7 @@ def hgi_rules(path, s) :
 	rule=m.group(3)
 	newgroup=m.group(4)
 	if rule == "teams" :
-		newgroup=teams[group]
+		newgroup=teams[newgroup]
         gid=grp.getgrnam(newgroup)[2]
         if s.st_gid != gid :
             # inode has wrong group owner : change it
@@ -44,7 +45,7 @@ def hgi_rules(path, s) :
             mpistat_common.LOG("changing %s group from %s to %s" %
                     (path, oldgroup, newgroup))
             try :
-                #os.chown(path,-1,gid)
+                os.chown(path,-1,gid)
             except (IOError, OSError) as e :
                 mpistat_common.ERR("Failed to change group from %s to % for %s : %s" % (oldgroup, newgroup, path, os.strerror(e.errno)))
 
@@ -54,9 +55,9 @@ def hgi_rules(path, s) :
             if not (s.st_mode & stat.S_ISGID) :
 		mpistat_common.LOG("setting GID sticky bit on %s" % path)
                 try :
-                    #os.chmod(path, s.st_mode | stat.S_ISGID)
+                    os.chmod(path, s.st_mode | stat.S_ISGID)
                 except (IOError, OSError) as e :
-                    mpistat_common.ERR("Failed set GID sticky bit on '%s' : %s" % (path, os.strerror(e.errno)))
+                    mpistat_common.ERR("Failed to set GID sticky bit on '%s' : %s" % (path, os.strerror(e.errno)))
 
     return gid
 
