@@ -27,7 +27,7 @@ class Inode:
         # store() method. You can alter Riak Data Types as much as you
         # wish on the client side prior to committing those changes to
         # Riak.
-        self.inode_map.store(timeout=1000)
+        self.inode_map.store()
 
     def as_json(self):
         m = self.inode_map.reload()

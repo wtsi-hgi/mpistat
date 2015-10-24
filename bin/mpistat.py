@@ -16,6 +16,8 @@ import riak
 import mpistat_config
 import mpistat_common
 from hgi_rules import hgi_rules
+import time
+import random
 
 class mpistat(ParallelWalk):
     """
@@ -59,18 +61,28 @@ class mpistat(ParallelWalk):
         # to avoid data races. locks can easily be handled in riak with
         # a strongly consisten bucket. Can also look at doing the aggregation
         # at the end with some kind of map reduce function instead
-#        Inode(
-#            client   = self.riak_client,
-#            path     = path,
-#            size     = str(s.st_size),
-#            uid      = str(s.st_uid),
-#            gid      = str(gid),
-#            type     = type,
-#            atime    = str(s.st_atime),
-#            mtime    = str(s.st_mtime),
-#            ctime    = str(s.st_ctime),
-#            children = children
-#       )
+	# seem to get riak timeouts occasionally so try a fw times before giving up
+	done=False
+	tries=1
+	while not done :
+            try : 
+                Inode(
+                    client   = self.riak_client,
+                    path     = path,
+                    size     = str(s.st_size),
+                    uid      = str(s.st_uid),
+                    gid      = str(gid),
+                    type     = mpistat_common.file_type(s.st_mode) ,
+                    atime    = str(s.st_atime),
+                    mtime    = str(s.st_mtime),
+                    ctime    = str(s.st_ctime),
+                    children = children
+                )
+                done = True
+            except :
+		mpistat_common.ERR("riak timout after %d tries" % (tries,))
+                tries+=1
+                time.sleep(random.randint(0,self.comm.size))
 
     def _lstat(self,path):
         """
