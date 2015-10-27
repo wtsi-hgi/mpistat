@@ -62,27 +62,21 @@ class mpistat(ParallelWalk):
         # a strongly consisten bucket. Can also look at doing the aggregation
         # at the end with some kind of map reduce function instead
 	# seem to get riak timeouts occasionally so try a fw times before giving up
-	done=False
-	tries=1
-	while not done :
-            try : 
-                Inode(
-                    client   = self.riak_client,
-                    path     = path,
-                    size     = str(s.st_size),
-                    uid      = str(s.st_uid),
-                    gid      = str(gid),
-                    type     = mpistat_common.file_type(s.st_mode) ,
-                    atime    = str(s.st_atime),
-                    mtime    = str(s.st_mtime),
-                    ctime    = str(s.st_ctime),
-                    children = children
-                )
-                done = True
-            except :
-		mpistat_common.ERR("riak timout after %d tries" % (tries,))
-                tries+=1
-                time.sleep(random.randint(0,self.comm.size))
+        riakClient=mpistat_common.get_riak_client()
+        bucket=rc.bucket('inodes')
+	obj={
+            'path'     : path,
+            'size'     : s.st_size,
+            'uid'      : s.st_uid,
+            'gid'      : gid,
+            'type'     : mpistat_common.file_type(s.st_mode),
+            'atime'    : s.st_atime,
+            'mtime'    : s.st_mtime,
+            'ctime'    : s.st_ctime,
+            'children' : children
+	}
+        newInode=bucket.new(obj['path'], data=obj)
+        newInode.store()
 
     def _lstat(self,path):
         """
@@ -119,9 +113,6 @@ if __name__ == "__main__":
     # init the crawler
     results = 0
     crawler = mpistat(comm, results)
-    
-    # get a riak client
-    crawler.riak_client = riak.RiakClient(nodes=mpistat_config.riak_nodes)
 
     # start processing loop
     r=crawler.Execute(seeds)
