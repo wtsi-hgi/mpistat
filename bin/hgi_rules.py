@@ -47,7 +47,7 @@ def hgi_rules(path, s) :
             try :
                 os.chown(path,-1,gid)
             except (IOError, OSError) as e :
-                mpistat_common.ERR("Failed to change group from %s to % for %s : %s" % (oldgroup, newgroup, path, os.strerror(e.errno)))
+                mpistat_common.ERR("Failed to change group from %s to %s for %s : %s" % (oldgroup, newgroup, path, os.strerror(e.errno)))
 
         # is it a directory
         if stat.S_ISDIR(s.st_mode) :
