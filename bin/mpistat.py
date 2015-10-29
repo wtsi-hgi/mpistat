@@ -17,7 +17,6 @@ import mpistat_config
 import mpistat_common
 from hgi_rules import hgi_rules
 import time
-import random
 
 class mpistat(ParallelWalk):
     """
@@ -45,15 +44,21 @@ class mpistat(ParallelWalk):
         # if the rules change the gid then we get that value returned
         # returns -1 if nothing changed
         # so if rules return +ve number then we need to modify the lstat gid
-        gid=hgi_rules(path, s)
-     
+        try :
+            gid=hgi_rules(path, s)
+        except :
+            mpistat_common.ERR("Failed to run hgi_rules on '%s' : %s " % (path, sys.exc_info()[0]))
+
         # if it's a directory, get list of files contained within it
         # and add them to the work queue
-	children=None
+	children=list()
         if stat.S_ISDIR(s.st_mode) :
-            children=os.listdir(path)
-            for child in children :
-                self.items.append(path+'/'+child)
+            for item in os.listdir(path) :
+                self.items.append(path+'/'+item)
+		try :
+                    children.append(unicode(item, 'utf-8'))
+                except :
+                    mpistat_common.ERR("Failed to add child '%s' : %s " % (item, sys.exc_info()[0]))
 
         # register the information in riak
         # may look at adding in the aggregation up the tree here also
@@ -62,21 +67,24 @@ class mpistat(ParallelWalk):
         # a strongly consisten bucket. Can also look at doing the aggregation
         # at the end with some kind of map reduce function instead
 	# seem to get riak timeouts occasionally so try a fw times before giving up
-        riakClient=mpistat_common.get_riak_client()
-        bucket=rc.bucket('inodes')
-	obj={
-            'path'     : path,
-            'size'     : s.st_size,
-            'uid'      : s.st_uid,
-            'gid'      : gid,
-            'type'     : mpistat_common.file_type(s.st_mode),
-            'atime'    : s.st_atime,
-            'mtime'    : s.st_mtime,
-            'ctime'    : s.st_ctime,
-            'children' : children
-	}
-        newInode=bucket.new(obj['path'], data=obj)
-        newInode.store()
+	try :
+            obj={
+                'path'     : unicode(path, 'utf-8'),
+                'size'     : s.st_size,
+                'uid'      : s.st_uid,
+                'gid'      : gid,
+                'type'     : mpistat_common.file_type(s.st_mode),
+                'atime'    : s.st_atime,
+                'mtime'    : s.st_mtime,
+                'ctime'    : s.st_ctime,
+                'children' : children
+            }
+            riakClient=mpistat_common.get_riak_client()
+            bucket=riakClient.bucket('inodes')
+            newInode=bucket.new(obj['path'], data=obj)
+            newInode.store()
+        except :
+            mpistat_common.ERR("Failed to store riak object '%s' : %s " % (path, sys.exc_info()[0]))
 
     def _lstat(self,path):
         """

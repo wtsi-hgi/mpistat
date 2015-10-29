@@ -6,6 +6,8 @@ import datetime
 import errno
 import stat
 import mpistat_config
+import random
+import riak
 
 def ERR(*objs):
     timestamp=datetime.datetime.fromtimestamp(
@@ -41,8 +43,10 @@ def file_type(mode) :
         return 'X'
 
 def get_riak_client() :
-    node=random.chooseone(mpistat_config.riak_nodes)
+    node=random.choice(mpistat_config.riak_nodes)
     return riak.RiakClient(host=node['host'], protocol='http', http_port=node['http_port'])
 
+def is_ascii(s):
+    return all(ord(c) < 128 for c in s)
 
 
