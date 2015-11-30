@@ -28,12 +28,11 @@ AWK
 
 # Print all files in $DATA, filter to data files, strip the extension,
 # sort, format (per above), sanitise line endings, strip blank columns
-# for non-existent scratch108 and scratch112
+# for non-existent scratch112
 find "$DATA" -type f -printf "%P\n" \
  | grep -P "^\d{8}_\d{3}\.dat\.gz$" \
  | cut -c -12 \
  | sort \
  | awk -F_ "$FORMAT" \
  | sed '/^$/d;$a\' \
- | cut --complement -c 23-26 \
- | cut --complement -c 35-38
+ | cut --complement -c 39-42
