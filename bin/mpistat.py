@@ -122,6 +122,8 @@ if __name__ == "__main__":
     results = 0
     crawler = mpistat(comm, results)
 
+    # set up a timer thread to periodially report number of items processed and size of queue
+
     # start processing loop
     r=crawler.Execute(seeds)
 
