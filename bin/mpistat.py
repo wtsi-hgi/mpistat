@@ -4,104 +4,128 @@
 # non-printable characters. also prints info from the lstat call :
 # path, size, uid, gid, atime, mtime, ctime, type (f,d etc.),
 # inode number and number of hard links
+from __future__ import print_function
 from mpi4py import MPI
 from ParallelWalk import ParallelWalk
 import os
-import pwd
 import sys
 import stat
-import time
+import mpistat_common
 import base64
+from hgi_rules import hgi_rules
 
-class pstat(ParallelWalk):
+
+class mpistat(ParallelWalk):
     """
-    Subclassing the ParallelWalk class to override the ProcessFile
-    and ProcessDir methods. Need to modify this once we have the
-    function signatures updated to pass in the lstat info if it has it.
-    It uses the results mechanism to return the total size in the
-    results.
+    Subclassing the ParallelWalk class to override the ProcessItems
+    method.
     """
 
-    def _file_type(self,mode) :
+    def ProcessItem(self):
         """
-        Turn the stat mode into it's standard representational character
+        Process an item from the work queue.
+        Expects items in the queue to be full path of the inode to
+        call lstat on.
         """
-        if stat.S_ISREG(mode) :
-            return 'f'
-        elif stat.S_ISDIR(mode) :
-            return 'd'
-        elif stat.S_ISLNK(mode) :
-            return 'l'
-        elif stat.S_ISSOCK(mode) :
-            return 's'
-        elif stat.S_ISBLK(mode) :
-            return 'b'
-        elif stat.S_ISCHR(mode) :
-            return 'c'
-        elif stat.S_ISFIFO(mode) :
-            return 'F'
-        else :
-            return 'X'
 
-    def stat_line(self, path, s) :
-        """
-        print out the stat information into a tab seperated file.
-        One file produced for each mpi rank. They all need to be
-        catted together once the job is done. For speed, we don't
-        try to resolve the uid and gid here, that can be done at
-        the parse stage.
-        """
-        try :
-            sz=s.st_size
-            self.results += sz
-            u=s.st_uid
-            g=s.st_gid
-            a=s.st_atime
-            m=s.st_mtime
-            c=s.st_ctime
-            i=s.st_ino
-            n=s.st_nlink
-            t=self._file_type(s.st_mode)
-            d=s.st_dev
-            out='%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%s\t%d\t%d\t%s\n' % \
-                (self.prefix,base64.b64encode(path),sz,u,g,a,m,c,t,i,n,d)
+        # pop item from the queue
+        path = self.items.pop()
+
+        # lstat it
+        try:
+            s = self._lstat(path)
+        except (IOError, OSError) as e:
+            mpistat_common.ERR("Failed to lstat '%s' : %s" %
+                               (path, os.strerror(e.errno)))
+            return
+
+        # apply hgi rules regarding files in lustre (if applicable)
+        # if the rules change the gid then we get that value returned
+        # returns -1 if nothing changed
+        # so if rules return +ve number then we need to modify the lstat gid
+        try:
+            gid = hgi_rules(path, s)
+        except:
+            mpistat_common.ERR("Failed to run hgi_rules on '%s' : %s "
+                               % (path, sys.exc_info()[0]))
+
+        # if it's a directory, get list of files contained within it
+        # and add them to the work queue
+        children = list()
+        if stat.S_ISDIR(s.st_mode):
+            for item in os.listdir(path):
+                self.items.append(path + '/' + item)
+                try:
+                    children.append(unicode(item, 'utf-8'))
+                except:
+                    mpistat_common.ERR("Failed to add child '%s' : %s "
+                                       % (item, sys.exc_info()[0]))
+        sz = s.st_size
+        self.results += sz
+        u = s.st_uid
+        g = gid
+        a = s.st_atime
+        m = s.st_mtime
+        c = s.st_ctime
+        t = mpistat_common.file_type(s.st_mode),
+        i = s.st_ino
+        n = s.st_nlink
+        d = s.st_dev
+        out = '%s\t%d\t%d\t%d\t%d\t%d\t%d\t%s\t%d\t%d\t%s\n' %\
+              (base64.b64encode(path), sz, u, g, a, m, c, t, i, n, d)
+        try:
             self.output_file.write(out)
-        except Exception, err :
-            sys.stderr.write('ERROR: %s\n' % str(err))
+        except Exception, err:
+            mpistat_common.ERR("Failed to write stat line for %s : %s"
+                               % (path, str(err)))
 
-    def ProcessFile(self, path, s):
-        if s is None :
-            s=self._lstat(path)
-        self.stat_line(path, s)
+    def _lstat(self, path):
+        """
+        lstat can sometimes by interrupted and return EINTR
+        so wrap the call in a try block
+        """
+        while True:
+            try:
+                return os.lstat(path)
+            except IOError, error:
+                if error.errno != 4:
+                    raise
 
-    def ProcessDir(self, path, s) :
-        self.ProcessFile(path, s)
 
 if __name__ == "__main__":
-    if len(sys.argv) != 4 :
-        print "usage : mpistat <start dir> <output dir> <line prefix>"
+
+    # check we have enough arguments
+    if len(sys.argv) < 3:
+        mpistat_common.ERR(
+            "usage : mpistat <ouptup dir> <dir1> [<dir2> <dir3>...<dirN>]")
         sys.exit(1)
 
-    start_dir=sys.argv[1]
+    # get full path for each argument passed in
+    # check they are directories which we can open
+    # construct seeds list of valid starting points
+    seeds = sys.argv[2:]
+
+    # get the MPI communicator
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     workers = comm.size
 
-    # create the output file for this rank
-    num='%02d' % (rank)
-    output_file=open(sys.argv[2]+'/'+num+'.out','w')
+    # start log message
+    mpistat_common.LOG("starting mpi worker %d of %d" % (rank, workers))
 
-    # start the crawler
-    crawler = pstat(comm, results=0)
+    # init the crawler
+    results = 0
+    crawler = mpistat(comm, results)
 
     # assign some instance variables that are used
-    # would be better to somehow specify these in a subclassed
-    # constructor
-    crawler.output_file=output_file
-    crawler.prefix=sys.argv[3]
-    print "prefix="+crawler.prefix
-    r=crawler.Execute(start_dir)
+    num = '%02d' % (rank)
+    output_file = open(sys.argv[1] + '/' + num + '.out', 'w')
+    crawler.output_file = output_file
+
+    # start processing loop
+    results = crawler.Execute(seeds)
 
     # report results if this is the rank 0 worker
-    if rank == 0 :
-        print "Total size was %.2f TiB" % ( sum(r) / (1024.0*1024.0*1024.0*1024.0) )
+    if rank == 0:
+        mpistat_common.LOG("Total size of files found was %.2f TiB" %
+                           (sum(results) / (1024.0*1024.0*1024.0*1024.0)))

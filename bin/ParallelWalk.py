@@ -1,4 +1,4 @@
-# Copyright Genome Research Ltd
+## Copyright Genome Research Ltd
 # Author gmpc@sanger.ac.uk
 # This program is released under the GNU Public License V2 or later (GPLV2+)
 from __future__ import print_function
@@ -6,8 +6,6 @@ from mpi4py import MPI
 import sys
 import os
 import random
-import stat
-import readdir
 import time
 from collections import deque
 
@@ -83,27 +81,12 @@ class ParallelWalk():
         self.results = results
         self.finished = False
 
-    
-    def ProcessDir(self, directoryname, s):
-        """This method is a stub called for each directory the walker 
-        encounters.  Extend it for your own needs.
+    def ProcessItem(self):
+        """
+        Stub Method to be overriden in a subclass.
+        Process an item from the work queue.
+        """
 
-        directoryname contains the name of the directory being processed.
-
-        If you have data which you want to return to the rank 0 process, use the results
-        attribute; this is MPI gathered when the walkers are done."""
-        pass
-
-
-    def ProcessFile(self, filename, s):
-        """This method is a stub called for each directory the walker 
-        encounters.  Extend it for your own needs.
-
-        filename contains the name of the file being processed.
-
-        If you have data which you want to return to the rank 0 process, use the results
-        attribute; this is MPI gathered when the walkers are done."""
-        pass
 
     def _CheckforRequests(self):
         """Listen for incoming communication data from our peers and answer
@@ -149,39 +132,7 @@ class ParallelWalk():
                 self.finished = True
         return()
 
-    def _ProcessNode(self):
-        """Process a node in the directory tree. If the node is another directory, 
-        enumerate its contents and add it to the list of nodes to be processed in the 
-        future."""
-        filename, filetype = self.items.pop()
 
-        try:
-            # If the filesystem supports readdir d_type, then we will know if the node is
-            # a file or a directory without doing any extra work. If it does not, we have
-            # to do a stat.
-            s=None
-            if filetype == 0:
-                s = self._lstat(filename)
-                if stat.S_ISDIR(s.st_mode):
-                    filetype = readdir.dirent.DT_DIR
-                else:
-                    filetype = readdir.dirent.DT_REG
-
-            # If we a directory, enumerate its contents and add them to the list of nodes
-            # to be processed.
-            if filetype == readdir.dirent.DT_DIR:
-                for node in readdir.readdir(filename):
-                    if not node.d_name in (".",".."):
-                        fullname = os.path.join(filename, node.d_name)
-                        self.items.appendleft((fullname, node.d_type))
-            # Call the processing functions on the directory or file.
-                self.ProcessDir(filename,s)
-            else:
-                self.ProcessFile(filename,s)
-        except OSError as error:
-            print("cannot access %s : %s" % \
-                (filename, os.strerror(error.errno)), file=sys.stderr)
-        return()
 
     def _AskForWork(self):
         """Send a work request to a random peer."""
@@ -242,18 +193,22 @@ class ParallelWalk():
     def _tidy(self):
         self.comm.Free()
 
-    def Execute(self, seed):
+    def Execute(self, seeds):
         """
-        This method starts the walkers. The rank 0 MPI walker takes a
-        seed parameter, which is the name of the first directory to walk.
+        This method starts the walkers. Seeds are evenly distributed
+        amongst the worker nodes. Assumption is that all seeds are valid
+        directories which are openable by the user running the job.
         The rank 0 walker will return a list containing the results
-        attributes for all of the walkers. This can be used to print
-        out summary statistics etc.
+        attributes for all of the walkers. This can be used to print out
+        summary statistics etc.
         """
-        # Initialize the rank0 walker with the seed directory.
-        # TODO: Be able to take multiple seeds
+
+        # Evenly distribute seeds amongst workers
+        for i in range(self.rank, len(seeds), self.workers):
+            self.items.append(seeds[i])
+
+        # Initialise termination detection
         if self.rank == 0:
-            self.items.append((seed, 4))
             self.token = "White"
         else:
             self.token = False
@@ -261,32 +216,19 @@ class ParallelWalk():
         # main loop
         # See if we have any pending communication requests.
         # If we have work, then do it, otherwise we ask our peers for some.
-
         while self.finished == False:
             self._CheckforRequests ()
             if len(self.items) > 0:
-                self._ProcessNode()
+                self.ProcessItem()
             else:
                 # We only want one request in-flight, otherwise we
                 # ping-pong worklist between nodes.
                 if self.workrequest == False:
                     self._AskForWork()
-            # If we have no more work, we might be 
+            # If we have no more work, we might be finished
             if len(self.items) == 0:
                 self._CheckForTermination()
         # Gather the summary data from other ranks and then exit.
         data = self.gatherResults()
         self._tidy()
         return(data)
-
-    def _lstat(self,path):
-        """
-        lstat can sometimes by interrupted and return EINTR
-        so wrap the call in a try block
-        """
-        while True:
-            try:
-                return os.lstat(path)
-            except IOError, error:
-                if error.errno != 4:
-                    raise
