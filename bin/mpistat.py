@@ -28,6 +28,9 @@ class mpistat(ParallelWalk):
         call lstat on.
         """
 
+        # debug : write size of queue
+        mpistat_common.LOG("node %d : queue size : %d" % (self.rank, len(self.items)))
+
         # pop item from the queue
         path = self.items.pop()
 
