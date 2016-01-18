@@ -29,7 +29,8 @@ class mpistat(ParallelWalk):
         """
 
         # debug : write size of queue
-        mpistat_common.LOG("node %d : queue size : %d" % (self.rank, len(self.items)))
+        # mpistat_common.LOG("node %d : queue size : %d" %
+        #                   (self.rank, len(self.items)))
 
         # pop item from the queue
         path = self.items.pop()
@@ -59,10 +60,10 @@ class mpistat(ParallelWalk):
             for item in os.listdir(path):
                 self.items.append(path + '/' + item)
                 try:
-                    children.append(unicode(item, 'utf-8'))
+                    children.append(item)
                 except:
-                    mpistat_common.ERR("Failed to add child '%s' : %s "
-                                       % (item, sys.exc_info()[0]))
+                    mpistat_common.ERR("Failed to add child '%s' to '%s': %s"
+                                       % (item, path, sys.exc_info()[0]))
         sz = s.st_size
         self.results += sz
         u = s.st_uid
