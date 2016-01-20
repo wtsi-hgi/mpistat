@@ -71,7 +71,7 @@ class mpistat(ParallelWalk):
         a = s.st_atime
         m = s.st_mtime
         c = s.st_ctime
-        t = mpistat_common.file_type(s.st_mode),
+        t = mpistat_common.file_type(s.st_mode)
         i = s.st_ino
         n = s.st_nlink
         d = s.st_dev
