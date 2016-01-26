@@ -50,7 +50,7 @@ main() {
 
       echo "Creating job array with $count elements"
       bsub -J "gz_fofn[1-$count]" "$ME run $fofn \$LSB_JOBINDEX"
-      bsub -w "done(gz_fofn[*])" -J "rm $fofn"
+      bsub -w "done(gz_fofn)" -J "rm $fofn"
       ;;
   esac
 }
