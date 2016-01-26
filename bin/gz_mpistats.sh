@@ -39,9 +39,11 @@ main() {
       ;;
 
     *)
-      fofn="$DATADIR/$(date +%Y%m%d).togz"
+      local id=$(date +%Y%m%d)
+      local job_name="gz_fofn${id}"
+      fofn="$DATADIR/${id}.togz"
       local count=$(create_fofn "$fofn")
-      
+
       if [ "$count" -eq "0" ]; then
         echo "Nothing to do!"
         rm "$fofn"
@@ -49,8 +51,8 @@ main() {
       fi
 
       echo "Creating job array with $count elements"
-      bsub -J "gz_fofn[1-$count]" "$ME run $fofn \$LSB_JOBINDEX"
-      bsub -w "done(gz_fofn)" -J "rm $fofn"
+      bsub -J "${job_name}[1-${count}]" "$ME run $fofn \$LSB_JOBINDEX"
+      bsub -w "ended(${job_name})" "rm $fofn"
       ;;
   esac
 }
