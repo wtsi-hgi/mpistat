@@ -49,9 +49,8 @@ main() {
       fi
 
       echo "Creating job array with $count elements"
-      bsub -J "linenum[1-$count]" \
-              "$ME run $fofn \$LSB_JOBINDEX" \
-              -Ep "rm $fofn"
+      bsub -J "gz_fofn[1-$count]" "$ME run $fofn \$LSB_JOBINDEX"
+      bsub -w "done(gz_fofn[*])" -J "rm $fofn"
       ;;
   esac
 }
