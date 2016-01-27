@@ -18,6 +18,7 @@ then
 else
     cat $BASE/data/$VOL/* > ${DATA_FILE}
     rm $BASE/data/$VOL/*
+    gzip ${DATA_FILE}
 fi
 
 # TO DO:
