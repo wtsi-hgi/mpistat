@@ -47,7 +47,7 @@ class mpistat(ParallelWalk):
         # if the rules change the gid then we get that value returned
         # returns -1 if nothing changed
         # so if rules return +ve number then we need to modify the lstat gid
-	gid = s.st_gid
+        gid = s.st_gid
         try:
             gid = hgi_rules(path, s)
         except:
