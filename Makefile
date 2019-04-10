@@ -1,9 +1,9 @@
-CFLAGS=-O2 -Wall -I/software/hgi/pkglocal/libcircle/include
-LIBS=-L/software/hgi/pkglocal/libcircle/lib -lcircle
+CFLAGS=-O2 -Wall -I${HOME}/include -std=c++11
+LIBS=-L${HOME}/lib -lcircle
 all : bin/mpistat
 
 bin/mpistat : src/mpistat.c
-	mpicxx $(CFLAGS) -o bin/mpistat mpistat.c $(LIBS)
+	mpic++ $(CFLAGS) -o bin/mpistat src/mpistat.cc $(LIBSC
 
 clean :
 	rm bin/mpistat
