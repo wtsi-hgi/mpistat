@@ -66,6 +66,8 @@ class mpistat(ParallelWalk):
                     mpistat_common.ERR("Failed to add child '%s' to '%s': %s"
                                        % (item, path, sys.exc_info()[0]))
         sz = s.st_size
+        if sz > s.st_blocks * 512:
+            sz = s.st_blocks * 512
         self.results += sz
         u = s.st_uid
         g = gid
